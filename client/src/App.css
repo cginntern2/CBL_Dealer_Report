@@ -1,0 +1,38 @@
+.app {
+  display: flex;
+  min-height: 100vh;
+  background-color: #ffffff;
+}
+
+.main-content {
+  flex: 1;
+  margin-left: 260px;
+  padding: 30px;
+  background-color: #ffffff;
+  min-height: 100vh;
+}
+
+.page-content {
+  padding: 20px;
+}
+
+.page-content h1 {
+  color: #1e3a8a;
+  margin-bottom: 20px;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.page-content p {
+  color: #64748b;
+  font-size: 16px;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0;
+    padding: 20px;
+  }
+}
+
+
