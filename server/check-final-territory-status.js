@@ -50,3 +50,4 @@ db.query('SELECT COUNT(*) as total FROM dealers', (err, res1) => {
     });
 });
 
+

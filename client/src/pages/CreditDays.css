@@ -1,0 +1,370 @@
+.credit-days-page {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.page-header h1 {
+  font-size: 28px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: #2563eb;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #1d4ed8;
+}
+
+.btn-secondary {
+  background-color: #6b7280;
+  color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #4b5563;
+}
+
+/* Upload Section */
+.upload-section {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.upload-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.upload-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.upload-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.file-input-label {
+  flex: 1;
+  position: relative;
+  display: inline-block;
+}
+
+.file-input-label input[type="file"] {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.file-input-text {
+  display: inline-block;
+  padding: 10px 16px;
+  background-color: #f3f4f6;
+  border: 2px dashed #d1d5db;
+  border-radius: 6px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  text-align: center;
+}
+
+.file-input-label:hover .file-input-text {
+  background-color: #e5e7eb;
+  border-color: #9ca3af;
+}
+
+.file-input-label input[type="file"]:disabled + .file-input-text {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Upload Status */
+.upload-status {
+  padding: 16px;
+  border-radius: 6px;
+  margin-top: 12px;
+}
+
+.upload-status.success {
+  background-color: #d1fae5;
+  border: 1px solid #10b981;
+}
+
+.upload-status.error {
+  background-color: #fee2e2;
+  border: 1px solid #ef4444;
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.status-icon {
+  flex-shrink: 0;
+}
+
+.upload-status.success .status-icon {
+  color: #10b981;
+}
+
+.upload-status.error .status-icon {
+  color: #ef4444;
+}
+
+.status-message {
+  flex: 1;
+  font-weight: 500;
+}
+
+.upload-status.success .status-message {
+  color: #065f46;
+}
+
+.upload-status.error .status-message {
+  color: #991b1b;
+}
+
+.close-status {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  color: #6b7280;
+}
+
+.close-status:hover {
+  color: #1a1a1a;
+}
+
+.status-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  font-size: 14px;
+}
+
+.status-details p {
+  margin: 4px 0;
+}
+
+.missing-dealers-section {
+  margin-top: 12px;
+}
+
+.missing-dealers-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.missing-dealer-tag {
+  display: inline-block;
+  padding: 4px 8px;
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.missing-dealer-more {
+  display: inline-block;
+  padding: 4px 8px;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Filters */
+.filters-section {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  background: white;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 150px;
+}
+
+.filter-group.search-group {
+  flex: 1;
+  min-width: 250px;
+}
+
+.filter-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.filter-group select,
+.filter-group input {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  background-color: white;
+  color: #1a1a1a;
+}
+
+.filter-group select:focus,
+.filter-group input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Report Section */
+.report-section {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.loading,
+.no-data {
+  text-align: center;
+  padding: 48px;
+  color: #6b7280;
+}
+
+.no-data svg {
+  margin-bottom: 16px;
+  color: #9ca3af;
+}
+
+.table-container {
+  overflow-x: auto;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.report-table thead {
+  background-color: #f9fafb;
+}
+
+.report-table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.report-table td {
+  padding: 12px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #1a1a1a;
+}
+
+.report-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+.report-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.credit-days-value {
+  font-weight: 600;
+  color: #2563eb;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .credit-days-page {
+    padding: 16px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .filters-section {
+    flex-direction: column;
+  }
+
+  .filter-group {
+    min-width: 100%;
+  }
+
+  .upload-controls {
+    flex-direction: column;
+  }
+
+  .table-container {
+    overflow-x: scroll;
+  }
+}
+

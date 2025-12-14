@@ -68,3 +68,4 @@ db.query(createTerritoriesTable, (err) => {
   });
 });
 
+

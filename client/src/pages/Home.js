@@ -114,6 +114,11 @@ const Home = () => {
           </div>
         </div>
       </div>
+
+      {/* Version Footer */}
+      <div className="version-footer">
+        <p>Version 1</p>
+      </div>
     </div>
   );
 };

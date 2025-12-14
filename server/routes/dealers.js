@@ -10,60 +10,24 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
-// Get all dealers with pagination and filtering
+// Get all dealers (for dropdowns/search)
 router.get('/', (req, res) => {
-  const { page = 1, limit, territory, showAll = 'false' } = req.query;
-  const showAllFlag = showAll === 'true';
-  const defaultLimit = 10;
-  const limitValue = limit ? parseInt(limit) : defaultLimit;
+  const query = `
+    SELECT d.*, t.territory_name 
+    FROM dealers d
+    LEFT JOIN territories t ON d.territory_id = t.id
+    ORDER BY d.dealer_name ASC
+  `;
   
-  // Build WHERE clause for filters
-  let whereClause = 'WHERE 1=1';
-  const queryParams = [];
-  
-  if (territory && territory !== 'all') {
-    whereClause += ' AND d.territory_id = ?';
-    queryParams.push(parseInt(territory));
-  }
-  
-  // Get total count for pagination (using the same WHERE clause)
-  const countQuery = `SELECT COUNT(*) as total FROM dealers d ${whereClause}`;
-  
-  db.query(countQuery, queryParams, (err, countResults) => {
+  db.query(query, (err, results) => {
     if (err) {
-      console.error('Error counting dealers:', err);
-      return res.status(500).json({ error: 'Failed to fetch dealers' });
+      console.error('Error fetching dealers:', err);
+      return res.status(500).json({ error: 'Failed to fetch dealers', details: err.message });
     }
     
-    const total = countResults[0].total;
-    
-    // Build main query with pagination (join with territories to get territory name)
-    let query = `SELECT d.*, t.territory_name, t.territory_code 
-                 FROM dealers d 
-                 LEFT JOIN territories t ON d.territory_id = t.id 
-                 ${whereClause} 
-                 ORDER BY d.dealer_name ASC`;
-    const finalQueryParams = [...queryParams];
-    
-    // Apply pagination only if showAll is false
-    if (!showAllFlag) {
-      const offset = (parseInt(page) - 1) * limitValue;
-      query += ` LIMIT ? OFFSET ?`;
-      finalQueryParams.push(limitValue, offset);
-    }
-    
-    db.query(query, finalQueryParams, (err, results) => {
-      if (err) {
-        console.error('Error fetching dealers:', err);
-        return res.status(500).json({ error: 'Failed to fetch dealers' });
-      }
       res.json({ 
-        dealers: results,
-        total: total,
-        page: parseInt(page),
-        limit: showAllFlag ? total : limitValue,
-        showAll: showAllFlag
-      });
+      success: true,
+      dealers: results
     });
   });
 });

@@ -4,6 +4,9 @@ import Sidebar from './components/Sidebar';
 import Home from './pages/Home';
 import DealerManagement from './pages/DealerManagement';
 import DelinquentDealers from './pages/DelinquentDealers';
+import TargetVsAchievement from './pages/TargetVsAchievement';
+import OverdueReport from './pages/OverdueReport';
+import CreditDays from './pages/CreditDays';
 import './App.css';
 
 function App() {
@@ -15,9 +18,9 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/dealers" element={<DealerManagement />} />
-            <Route path="/target-vs-achievement" element={<div className="page-content"><h1>Target vs Achievement Report</h1><p>Module coming soon...</p></div>} />
-            <Route path="/overdue" element={<div className="page-content"><h1>Overdue Report</h1><p>Module coming soon...</p></div>} />
-            <Route path="/credit-days" element={<div className="page-content"><h1>Credit Days</h1><p>Module coming soon...</p></div>} />
+            <Route path="/target-vs-achievement" element={<TargetVsAchievement />} />
+            <Route path="/overdue" element={<OverdueReport />} />
+            <Route path="/credit-days" element={<CreditDays />} />
             <Route path="/delinquent-dealers" element={<DelinquentDealers />} />
           </Routes>
         </main>

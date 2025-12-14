@@ -53,6 +53,18 @@ app.use('/api/dealers', dealerRoutes);
 const delinquentRoutes = require('./routes/delinquent');
 app.use('/api/delinquent', delinquentRoutes);
 
+// Target vs Achievement routes
+const targetRoutes = require('./routes/targets');
+app.use('/api/targets', targetRoutes);
+
+// Overdue report routes
+const overdueRoutes = require('./routes/overdue');
+app.use('/api/overdue', overdueRoutes);
+
+// Credit days routes
+const creditDaysRoutes = require('./routes/credit-days');
+app.use('/api/credit-days', creditDaysRoutes);
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

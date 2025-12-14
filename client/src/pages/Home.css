@@ -10,7 +10,7 @@
 .page-title {
   font-size: 32px;
   font-weight: 600;
-  color: #1e3a8a;
+  color: #ffffff;
   margin: 0;
 }
 
@@ -149,6 +149,19 @@
   color: #64748b;
   margin: 0;
   line-height: 1.5;
+}
+
+.version-footer {
+  margin-top: 60px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+  text-align: center;
+}
+
+.version-footer p {
+  color: #64748b;
+  font-size: 14px;
+  margin: 0;
 }
 
 @media (max-width: 768px) {
