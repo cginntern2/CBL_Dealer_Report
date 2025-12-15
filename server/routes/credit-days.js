@@ -146,8 +146,9 @@ router.post('/upload', upload.single('file'), async (req, res) => {
           // Validate: not a year, reasonable dealer code range
           if (!code.startsWith('19') && !code.startsWith('20') && parseInt(code) >= 100 && parseInt(code) <= 99999) {
             const normalized = normalizeDealerCode(code);
-            // Avoid duplicates from same area
-            if (!dealerCodes.find(dc => dc.code === normalized && Math.abs(dc.lineIndex - i) < 10)) {
+            // Avoid duplicates from same line/area (within 3 lines, not 10)
+            // This allows the same code to appear on different pages/sections
+            if (!dealerCodes.find(dc => dc.code === normalized && Math.abs(dc.lineIndex - i) < 3)) {
               dealerCodes.push({
                 code: normalized,
                 lineIndex: i,
@@ -187,14 +188,75 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     
     console.log(`Credit Days Upload - Found ${dealerCodes.length} dealer codes and ${creditDaysList.length} credit days values`);
     
+    // Debug: Log sample codes and credit days
+    if (dealerCodes.length > 0) {
+      console.log(`Credit Days Upload - Sample dealer codes (first 10):`, dealerCodes.slice(0, 10).map(dc => `${dc.code}@${dc.lineIndex}`));
+    }
+    if (creditDaysList.length > 0) {
+      console.log(`Credit Days Upload - Sample credit days (first 10):`, creditDaysList.slice(0, 10).map(cd => `${cd.value}@${cd.lineIndex}`));
+    }
+    
     // Match dealer codes with credit days by position
-    // Group by proximity: codes and credit days that appear in similar document regions
+    // Strategy: Match codes with the closest credit days value within a reasonable distance
     const matched = new Map();
     
+    // First, try to match codes and credit days on the same line
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      // Find all dealer codes on this line
+      const codeMatches = line.match(/\b(\d{4,5})\b/g);
+      if (!codeMatches) continue;
+      
+      // Find all credit days values on this line
+      const creditDaysMatches = line.match(/\b(\d{1,3})\b/g);
+      const creditDaysOnLine = [];
+      if (creditDaysMatches) {
+        for (const numStr of creditDaysMatches) {
+          const num = parseInt(numStr);
+          if (num >= 0 && num <= 365 && numStr.length <= 3) {
+            creditDaysOnLine.push(num);
+          }
+        }
+      }
+      
+      // If we have both codes and credit days on the same line, match them
+      for (const code of codeMatches) {
+        if (!code.startsWith('19') && !code.startsWith('20') && parseInt(code) >= 100 && parseInt(code) <= 99999) {
+          const normalized = normalizeDealerCode(code);
+          
+          // Try to find credit days on the same line
+          if (creditDaysOnLine.length > 0) {
+            // Use the last credit days value on the line (usually the rightmost column)
+            const creditDays = creditDaysOnLine[creditDaysOnLine.length - 1];
+            const key = normalized;
+            
+            // Only update if we don't have a match or this is a better match (same line)
+            if (!matched.has(key) || matched.get(key).distance > 0) {
+              matched.set(key, {
+                dealerCode: normalized,
+                creditDays: creditDays,
+                distance: 0, // Same line = distance 0
+                codeLine: i
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    // Second pass: For codes without matches, look for credit days on nearby lines (within 5 lines)
+    // Increased from 2 to 5 lines to handle multi-column layouts better
     for (const codeInfo of dealerCodes) {
-      // Find credit days values near this code (within 100 lines)
+      const key = codeInfo.code;
+      
+      // Skip if already matched
+      if (matched.has(key)) continue;
+      
+      // Look for credit days on nearby lines (within 5 lines)
       const nearby = creditDaysList.filter(cd => 
-        Math.abs(cd.lineIndex - codeInfo.lineIndex) < 100
+        Math.abs(cd.lineIndex - codeInfo.lineIndex) <= 5
       );
       
       if (nearby.length > 0) {
@@ -204,21 +266,43 @@ router.post('/upload', upload.single('file'), async (req, res) => {
             ? curr : prev
         );
         
-        // Only match if reasonably close (within 80 lines)
-        if (Math.abs(closest.lineIndex - codeInfo.lineIndex) < 80) {
-          const key = codeInfo.code;
-          const distance = Math.abs(closest.lineIndex - codeInfo.lineIndex);
-          
-          // Keep the best match (closest distance)
-          if (!matched.has(key) || distance < matched.get(key).distance) {
-            matched.set(key, {
-              dealerCode: codeInfo.code,
-              creditDays: closest.value,
-              distance: distance,
-              codeLine: codeInfo.lineIndex
-            });
-          }
-        }
+        const distance = Math.abs(closest.lineIndex - codeInfo.lineIndex);
+        matched.set(key, {
+          dealerCode: codeInfo.code,
+          creditDays: closest.value,
+          distance: distance,
+          codeLine: codeInfo.lineIndex
+        });
+      }
+    }
+    
+    // Third pass: For any remaining unmatched codes, try to find credit days within 10 lines
+    // This handles cases where data might be more spread out
+    for (const codeInfo of dealerCodes) {
+      const key = codeInfo.code;
+      
+      // Skip if already matched
+      if (matched.has(key)) continue;
+      
+      // Look for credit days within 10 lines
+      const nearby = creditDaysList.filter(cd => 
+        Math.abs(cd.lineIndex - codeInfo.lineIndex) <= 10
+      );
+      
+      if (nearby.length > 0) {
+        // Find the closest credit days value
+        const closest = nearby.reduce((prev, curr) => 
+          Math.abs(curr.lineIndex - codeInfo.lineIndex) < Math.abs(prev.lineIndex - codeInfo.lineIndex) 
+            ? curr : prev
+        );
+        
+        const distance = Math.abs(closest.lineIndex - codeInfo.lineIndex);
+        matched.set(key, {
+          dealerCode: codeInfo.code,
+          creditDays: closest.value,
+          distance: distance,
+          codeLine: codeInfo.lineIndex
+        });
       }
     }
     
@@ -232,6 +316,20 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     });
     
     console.log(`Credit Days Upload - Matched ${records.length} dealer codes with credit days`);
+    
+    // Debug: Log a few sample matches to verify accuracy
+    if (records.length > 0) {
+      console.log('Credit Days Upload - Sample matches (first 10):');
+      records.slice(0, 10).forEach(r => {
+        console.log(`  Dealer ${r.dealerCode}: ${r.creditDays} credit days`);
+      });
+      
+      // Check for dealer 01268 specifically
+      const dealer1268 = records.find(r => r.dealerCode === '1268' || r.dealerCode === '01268');
+      if (dealer1268) {
+        console.log(`Credit Days Upload - Found dealer 01268/1268: ${dealer1268.creditDays} credit days`);
+      }
+    }
     
     if (records.length === 0) {
       return res.status(400).json({ 
@@ -416,40 +514,55 @@ router.get('/report', (req, res) => {
     queryParams.push(parseInt(territory));
   }
   
-  const query = `
-    SELECT 
-      cdr.dealer_code,
-      d.dealer_name,
-      t.territory_name,
-      cdr.year,
-      cdr.month,
-      cdr.credit_days,
-      cdr.report_date,
-      cdr.created_at,
-      cdr.updated_at
-    FROM credit_days_report cdr
-    INNER JOIN dealers d ON BINARY d.dealer_code = BINARY cdr.dealer_code
-    LEFT JOIN territories t ON d.territory_id = t.id
-    ${whereClause}
-    ORDER BY 
-      cdr.report_date DESC,
-      cdr.year DESC,
-      cdr.month DESC,
-      d.dealer_name ASC
-  `;
+  // First, get the most recent report_date (Printing Date) from credit_days_report
+  const getLatestDateQuery = `SELECT MAX(\`report_date\`) as latest_date FROM credit_days_report`;
   
-  db.query(query, queryParams, (err, results) => {
-    if (err) {
-      console.error('Error fetching credit days report:', err);
-      return res.status(500).json({ 
-        error: 'Failed to fetch credit days report', 
-        details: err.message 
-      });
-    }
+  db.query(getLatestDateQuery, (dateErr, dateResults) => {
+    let latestDate = null;
     
-    res.json({
-      success: true,
-      data: results
+    if (dateErr) {
+      console.error('Error fetching latest date:', dateErr);
+      // Continue even if date query fails
+    } else if (dateResults && dateResults.length > 0 && dateResults[0].latest_date) {
+      latestDate = dateResults[0].latest_date;
+    }
+  
+    const query = `
+      SELECT 
+        cdr.dealer_code,
+        d.dealer_name,
+        t.territory_name,
+        cdr.year,
+        cdr.month,
+        cdr.credit_days,
+        cdr.report_date,
+        cdr.created_at,
+        cdr.updated_at
+      FROM credit_days_report cdr
+      INNER JOIN dealers d ON BINARY d.dealer_code = BINARY cdr.dealer_code
+      LEFT JOIN territories t ON d.territory_id = t.id
+      ${whereClause}
+      ORDER BY 
+        cdr.report_date DESC,
+        cdr.year DESC,
+        cdr.month DESC,
+        d.dealer_name ASC
+    `;
+    
+    db.query(query, queryParams, (err, results) => {
+      if (err) {
+        console.error('Error fetching credit days report:', err);
+        return res.status(500).json({ 
+          error: 'Failed to fetch credit days report', 
+          details: err.message 
+        });
+      }
+      
+      res.json({
+        success: true,
+        data: results,
+        latestDate: latestDate // Most recent "Printing Date" from credit_days_report
+      });
     });
   });
 });

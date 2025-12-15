@@ -848,7 +848,25 @@ const TargetVsAchievement = () => {
                           style={{ cursor: 'pointer', userSelect: 'none' }}
                           onClick={() => handleSort('amount_percentage')}
                         >
-                          Achievement % {sortConfig.key === 'amount_percentage' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                          Amount % {sortConfig.key === 'amount_percentage' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th 
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                          onClick={() => handleSort(breakdownType === 'abp' ? 'abp_target_quantity' : 'forecast_target_quantity')}
+                        >
+                          Target Qty {sortConfig.key === (breakdownType === 'abp' ? 'abp_target_quantity' : 'forecast_target_quantity') && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th 
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                          onClick={() => handleSort('achievement_quantity')}
+                        >
+                          Achievement Qty {sortConfig.key === 'achievement_quantity' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th 
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                          onClick={() => handleSort('quantity_percentage')}
+                        >
+                          Quantity % {sortConfig.key === 'quantity_percentage' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </th>
                         <th>Status</th>
                       </tr>
@@ -859,7 +877,10 @@ const TargetVsAchievement = () => {
                         const isExpanded = expandedDealer === dealerKey;
                         const targetAmount = breakdownType === 'abp' ? (item.abp_target_amount || 0) : (item.forecast_target_amount || 0);
                         const achievementAmount = item.achievement_amount || 0;
-                        const percentage = item.amount_percentage || 0;
+                        const amountPercentage = item.amount_percentage || 0;
+                        const targetQuantity = breakdownType === 'abp' ? (item.abp_target_quantity || 0) : (item.forecast_target_quantity || 0);
+                        const achievementQuantity = item.achievement_quantity || 0;
+                        const quantityPercentage = item.quantity_percentage || 0;
                         const details = dealerDetails[dealerKey];
                         
                         return (
@@ -889,8 +910,8 @@ const TargetVsAchievement = () => {
                               </td>
                               <td>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span className={percentage >= 100 ? 'positive' : percentage >= 80 ? 'warning' : 'negative'}>
-                                    {formatPercentage(percentage)}
+                                  <span className={amountPercentage >= 100 ? 'positive' : amountPercentage >= 80 ? 'warning' : 'negative'}>
+                                    {formatPercentage(amountPercentage)}
                                   </span>
                                   <div style={{ 
                                     width: '60px', 
@@ -900,9 +921,42 @@ const TargetVsAchievement = () => {
                                     overflow: 'hidden'
                                   }}>
                                     <div style={{
-                                      width: `${Math.min(percentage, 100)}%`,
+                                      width: `${Math.min(amountPercentage, 100)}%`,
                                       height: '100%',
-                                      background: percentage >= 100 ? '#10b981' : percentage >= 80 ? '#f59e0b' : '#ef4444',
+                                      background: amountPercentage >= 100 ? '#10b981' : amountPercentage >= 80 ? '#f59e0b' : '#ef4444',
+                                      transition: 'width 0.3s'
+                                    }} />
+                                  </div>
+                                </div>
+                              </td>
+                              <td>
+                                {targetQuantity > 0 
+                                  ? targetQuantity.toLocaleString() 
+                                  : <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>
+                                }
+                              </td>
+                              <td>
+                                {achievementQuantity > 0 
+                                  ? achievementQuantity.toLocaleString() 
+                                  : <span style={{ color: '#999', fontStyle: 'italic' }}>No sales</span>
+                                }
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span className={quantityPercentage >= 100 ? 'positive' : quantityPercentage >= 80 ? 'warning' : 'negative'}>
+                                    {formatPercentage(quantityPercentage)}
+                                  </span>
+                                  <div style={{ 
+                                    width: '60px', 
+                                    height: '8px', 
+                                    background: '#e5e7eb', 
+                                    borderRadius: '4px',
+                                    overflow: 'hidden'
+                                  }}>
+                                    <div style={{
+                                      width: `${Math.min(quantityPercentage, 100)}%`,
+                                      height: '100%',
+                                      background: quantityPercentage >= 100 ? '#10b981' : quantityPercentage >= 80 ? '#f59e0b' : '#ef4444',
                                       transition: 'width 0.3s'
                                     }} />
                                   </div>
@@ -914,16 +968,16 @@ const TargetVsAchievement = () => {
                                   borderRadius: '4px',
                                   fontSize: '12px',
                                   fontWeight: '500',
-                                  background: percentage >= 100 ? '#d1fae5' : percentage >= 80 ? '#fef3c7' : '#fee2e2',
-                                  color: percentage >= 100 ? '#065f46' : percentage >= 80 ? '#92400e' : '#991b1b'
+                                  background: (amountPercentage >= 100 && quantityPercentage >= 100) ? '#d1fae5' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '#fef3c7' : '#fee2e2',
+                                  color: (amountPercentage >= 100 && quantityPercentage >= 100) ? '#065f46' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '#92400e' : '#991b1b'
                                 }}>
-                                  {percentage >= 100 ? '✓ On Target' : percentage >= 80 ? '⚠ Close' : '✗ Below Target'}
+                                  {(amountPercentage >= 100 && quantityPercentage >= 100) ? '✓ On Target' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '⚠ Close' : '✗ Below Target'}
                                 </span>
                               </td>
                             </tr>
                             {isExpanded && (
                               <tr>
-                                <td colSpan="8" style={{ padding: '20px', background: '#f9fafb' }}>
+                                <td colSpan="11" style={{ padding: '20px', background: '#f9fafb' }}>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                     {/* Summary Cards */}
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
@@ -947,8 +1001,8 @@ const TargetVsAchievement = () => {
                                       </div>
                                       <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
                                         <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Amount %</div>
-                                        <div style={{ fontSize: '18px', fontWeight: '600', color: percentage >= 100 ? '#10b981' : '#ef4444' }}>
-                                          {formatPercentage(percentage)}
+                                        <div style={{ fontSize: '18px', fontWeight: '600', color: (item.amount_percentage || 0) >= 100 ? '#10b981' : '#ef4444' }}>
+                                          {formatPercentage(item.amount_percentage || 0)}
                                         </div>
                                       </div>
                                     </div>

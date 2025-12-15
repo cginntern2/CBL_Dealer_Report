@@ -10,24 +10,100 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
-// Get all dealers (for dropdowns/search)
+// Get all dealers (for dropdowns/search) with filtering
 router.get('/', (req, res) => {
-  const query = `
+  const { territory, status, search, limit } = req.query;
+  
+  let query = `
     SELECT d.*, t.territory_name 
     FROM dealers d
     LEFT JOIN territories t ON d.territory_id = t.id
-    ORDER BY d.dealer_name ASC
+    WHERE 1=1
   `;
+  const params = [];
   
-  db.query(query, (err, results) => {
+  // Filter by territory
+  if (territory && territory !== 'all') {
+    query += ` AND d.territory_id = ?`;
+    params.push(parseInt(territory));
+  }
+  
+  // Filter by status
+  if (status && status !== 'all') {
+    query += ` AND d.status = ?`;
+    params.push(status);
+  }
+  
+  // Search filter (dealer name, code, contact person, email)
+  if (search && search.trim()) {
+    query += ` AND (
+      d.dealer_name LIKE ? OR 
+      d.dealer_code LIKE ? OR 
+      d.contact_person LIKE ? OR 
+      d.email LIKE ?
+    )`;
+    const searchPattern = `%${search.trim()}%`;
+    params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+  }
+  
+  query += ` ORDER BY d.dealer_name ASC`;
+  
+  // Apply limit if specified
+  if (limit && !isNaN(parseInt(limit))) {
+    query += ` LIMIT ?`;
+    params.push(parseInt(limit));
+  }
+  
+  // Get total count for pagination info
+  let countQuery = `
+    SELECT COUNT(*) as total
+    FROM dealers d
+    WHERE 1=1
+  `;
+  const countParams = [];
+  
+  if (territory && territory !== 'all') {
+    countQuery += ` AND d.territory_id = ?`;
+    countParams.push(parseInt(territory));
+  }
+  
+  if (status && status !== 'all') {
+    countQuery += ` AND d.status = ?`;
+    countParams.push(status);
+  }
+  
+  if (search && search.trim()) {
+    countQuery += ` AND (
+      d.dealer_name LIKE ? OR 
+      d.dealer_code LIKE ? OR 
+      d.contact_person LIKE ? OR 
+      d.email LIKE ?
+    )`;
+    const searchPattern = `%${search.trim()}%`;
+    countParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+  }
+  
+  // Execute count query first
+  db.query(countQuery, countParams, (err, countResults) => {
     if (err) {
-      console.error('Error fetching dealers:', err);
-      return res.status(500).json({ error: 'Failed to fetch dealers', details: err.message });
+      console.error('Error counting dealers:', err);
+      return res.status(500).json({ error: 'Failed to count dealers', details: err.message });
     }
     
+    const total = countResults[0]?.total || 0;
+    
+    // Execute main query
+    db.query(query, params, (err, results) => {
+      if (err) {
+        console.error('Error fetching dealers:', err);
+        return res.status(500).json({ error: 'Failed to fetch dealers', details: err.message });
+      }
+      
       res.json({ 
-      success: true,
-      dealers: results
+        success: true,
+        dealers: results,
+        total: total
+      });
     });
   });
 });

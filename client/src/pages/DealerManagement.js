@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Upload, Plus, Search, Trash2, X } from 'lucide-react';
 import './DealerManagement.css';
@@ -12,10 +12,11 @@ const DealerManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState(null);
-  const [showAll, setShowAll] = useState(false);
   const [selectedTerritory, setSelectedTerritory] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
   const [territories, setTerritories] = useState([]);
   const [totalDealers, setTotalDealers] = useState(0);
+  const [displayLimit, setDisplayLimit] = useState(50);
   const [formData, setFormData] = useState({
     dealer_name: '',
     dealer_code: '',
@@ -28,12 +29,6 @@ const DealerManagement = () => {
     status: 'active'
   });
 
-  // Fetch dealers with pagination
-  useEffect(() => {
-    fetchDealers();
-    fetchTerritories();
-  }, [selectedTerritory, showAll]);
-
   const fetchTerritories = async () => {
     try {
       const response = await axios.get('/api/dealers/territories');
@@ -43,15 +38,19 @@ const DealerManagement = () => {
     }
   };
 
-  const fetchDealers = async () => {
+  const fetchDealers = useCallback(async () => {
     setLoading(true);
     try {
-      const params = {};
-      if (!showAll) {
-        params.limit = 10;
+      const params = {
+        territory: selectedTerritory,
+        status: selectedStatus,
+        limit: displayLimit
+      };
+      
+      // Only add search if there's a search term
+      if (searchTerm && searchTerm.trim()) {
+        params.search = searchTerm.trim();
       }
-      params.showAll = showAll.toString();
-      params.territory = selectedTerritory;
       
       const response = await axios.get('/api/dealers', { params });
       setDealers(response.data.dealers || []);
@@ -62,7 +61,21 @@ const DealerManagement = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedTerritory, selectedStatus, searchTerm, displayLimit]);
+
+  // Fetch territories on mount
+  useEffect(() => {
+    fetchTerritories();
+  }, []);
+
+  // Fetch dealers with filters (debounce search term)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      fetchDealers();
+    }, searchTerm ? 500 : 0); // Debounce search by 500ms, no delay for other filters
+
+    return () => clearTimeout(timeoutId);
+  }, [fetchDealers, searchTerm]);
 
   // Handle manual add form submission
   const handleAddDealer = async (e) => {
@@ -178,22 +191,8 @@ const DealerManagement = () => {
     });
   };
 
-  // Filter dealers based on search term (only filter if we're showing all)
-  const filteredDealers = showAll 
-    ? dealers.filter(dealer =>
-        dealer.dealer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        dealer.dealer_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (dealer.contact_person && dealer.contact_person.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (dealer.email && dealer.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (dealer.territory_name && dealer.territory_name.toLowerCase().includes(searchTerm.toLowerCase()))
-      )
-    : dealers.filter(dealer =>
-        dealer.dealer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        dealer.dealer_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (dealer.contact_person && dealer.contact_person.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (dealer.email && dealer.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (dealer.territory_name && dealer.territory_name.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
+  // Dealers are already filtered by backend, so we can use them directly
+  const filteredDealers = dealers;
 
   return (
     <div className="dealer-management">
@@ -223,43 +222,64 @@ const DealerManagement = () => {
       </div>
 
       <div className="filters-section">
-        <div className="search-bar">
-          <div className="search-input-wrapper">
-            <Search className="search-icon" size={20} />
-            <input
-              type="text"
-              placeholder="Search dealers by name, code, contact, or email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="search-input"
-            />
+        <div className="filters-row">
+          <div className="search-bar">
+            <div className="search-input-wrapper">
+              <Search className="search-icon" size={20} />
+              <input
+                type="text"
+                placeholder="Search dealers by name, code, contact, or email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="search-input"
+              />
+            </div>
+          </div>
+          <div className="filter-group">
+            <label>Territory:</label>
+            <select
+              value={selectedTerritory}
+              onChange={(e) => setSelectedTerritory(e.target.value)}
+              className="filter-select"
+            >
+              <option value="all">All Territories</option>
+              {territories.map(territory => (
+                <option key={territory.id} value={territory.id}>{territory.territory_name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="filter-group">
+            <label>Status:</label>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="filter-select"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="delinquent">Delinquent</option>
+            </select>
+          </div>
+          <div className="filter-group">
+            <label>Show:</label>
+            <select
+              value={displayLimit}
+              onChange={(e) => setDisplayLimit(parseInt(e.target.value))}
+              className="filter-select"
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
+              <option value={500}>500</option>
+            </select>
           </div>
         </div>
-        <div className="territory-filter">
-          <label>Filter by Territory:</label>
-          <select
-            value={selectedTerritory}
-            onChange={(e) => {
-              setSelectedTerritory(e.target.value);
-              setShowAll(false);
-            }}
-            className="territory-select"
-          >
-            <option value="all">All Territories</option>
-            {territories.map(territory => (
-              <option key={territory.id} value={territory.id}>{territory.territory_name}</option>
-            ))}
-          </select>
-        </div>
         <div className="dealer-count">
-          Showing: <strong>{filteredDealers.length}</strong> of <strong>{totalDealers}</strong>
-          {!showAll && totalDealers > 10 && (
-            <button 
-              className="btn-show-all"
-              onClick={() => setShowAll(true)}
-            >
-              Show All
-            </button>
+          Showing: <strong>{filteredDealers.length}</strong> of <strong>{totalDealers}</strong> dealers
+          {totalDealers > displayLimit && (
+            <span className="limit-warning"> (Limited to {displayLimit} results. Use filters to narrow down.)</span>
           )}
         </div>
       </div>

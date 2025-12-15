@@ -63,6 +63,7 @@ router.get('/', (req, res) => {
     const total = countResults[0].total;
     
     // Build main query with pagination
+    // Join with overdue_report to get most recent overdue data for each dealer
     let query = `
       SELECT 
         d.id,
@@ -75,9 +76,24 @@ router.get('/', (req, res) => {
         del.months_inactive,
         del.category,
         del.created_at,
-        del.updated_at
+        del.updated_at,
+        COALESCE(ovr.lower_limit_overdue, 0) as lower_limit_overdue,
+        COALESCE(ovr.upper_limit_overdue, 0) as upper_limit_overdue
       FROM delinquent del
-      INNER JOIN dealers d ON del.dealer_code = d.dealer_code
+      INNER JOIN dealers d ON BINARY del.dealer_code = BINARY d.dealer_code
+      LEFT JOIN (
+        SELECT 
+          ovr1.dealer_code,
+          ovr1.lower_limit_overdue,
+          ovr1.upper_limit_overdue
+        FROM overdue_report ovr1
+        INNER JOIN (
+          SELECT dealer_code, MAX(\`current_date\`) as max_date
+          FROM overdue_report
+          GROUP BY dealer_code
+        ) ovr2 ON BINARY ovr1.dealer_code = BINARY ovr2.dealer_code 
+          AND ovr1.\`current_date\` = ovr2.max_date
+      ) ovr ON BINARY d.dealer_code = BINARY ovr.dealer_code
       ${whereClause}
       ORDER BY del.months_inactive DESC, d.dealer_name ASC
     `;

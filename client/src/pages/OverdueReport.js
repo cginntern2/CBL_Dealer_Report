@@ -20,6 +20,7 @@ const OverdueReport = () => {
   const [updateStatus, setUpdateStatus] = useState(null);
   const [uploadStatus, setUploadStatus] = useState(null);
   const [uploadFile, setUploadFile] = useState(null);
+  const [latestDate, setLatestDate] = useState(null);
   
   // Filters
   const [selectedYear, setSelectedYear] = useState('');
@@ -39,6 +40,7 @@ const OverdueReport = () => {
       const response = await axios.get('/api/overdue/report', { params });
       setReportData(response.data.data || []);
       setSummary(response.data.summary || {});
+      setLatestDate(response.data.latestDate || null);
     } catch (error) {
       console.error('Error fetching overdue report:', error);
       alert('Failed to fetch overdue report: ' + (error.response?.data?.error || error.message));
@@ -311,6 +313,16 @@ const OverdueReport = () => {
         <div className="header-content">
           <h1><AlertCircle className="header-icon" /> Overdue Report</h1>
           <p>Monitor lower and upper limit overdue amounts for dealers</p>
+          {latestDate && (
+            <div className="last-updated">
+              <Calendar size={16} />
+              <span>Data as of: {new Date(latestDate).toLocaleDateString('en-IN', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -323,7 +335,6 @@ const OverdueReport = () => {
           <div className="stat-content">
             <h3>Lower Limit Overdue</h3>
             <p className="stat-value">{summary.lower_limit_overdue_count || 0} dealers</p>
-            <p className="stat-amount">{formatCurrency(summary.total_lower_limit_overdue || 0)}</p>
           </div>
         </div>
         <div className="stat-card">
@@ -333,7 +344,6 @@ const OverdueReport = () => {
           <div className="stat-content">
             <h3>Upper Limit Overdue</h3>
             <p className="stat-value">{summary.upper_limit_overdue_count || 0} dealers</p>
-            <p className="stat-amount">{formatCurrency(summary.total_upper_limit_overdue || 0)}</p>
           </div>
         </div>
         <div className="stat-card">

@@ -65,6 +65,104 @@ app.use('/api/overdue', overdueRoutes);
 const creditDaysRoutes = require('./routes/credit-days');
 app.use('/api/credit-days', creditDaysRoutes);
 
+// Dashboard statistics endpoint
+app.get('/api/dashboard/stats', (req, res) => {
+  const stats = {};
+  let completedQueries = 0;
+  const totalQueries = 5;
+  let responseSent = false;
+
+  const sendResponse = () => {
+    if (!responseSent && completedQueries === totalQueries) {
+      responseSent = true;
+      res.json(stats);
+    }
+  };
+
+  // 1. Total dealers count
+  db.query('SELECT COUNT(*) as total FROM dealers', (err, results) => {
+    if (!err && results.length > 0) {
+      stats.totalDealers = results[0].total;
+    } else {
+      stats.totalDealers = 0;
+    }
+    completedQueries++;
+    sendResponse();
+  });
+
+  // 2. Active dealers count
+  db.query('SELECT COUNT(*) as total FROM dealers WHERE status = "active"', (err, results) => {
+    if (!err && results.length > 0) {
+      stats.activeDealers = results[0].total;
+    } else {
+      stats.activeDealers = 0;
+    }
+    completedQueries++;
+    sendResponse();
+  });
+
+  // 3. Total achievements (current month)
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth() + 1;
+  
+  db.query(
+    `SELECT 
+      COALESCE(SUM(achievement_amount), 0) as total_amount,
+      COALESCE(SUM(achievement_quantity), 0) as total_quantity,
+      COUNT(DISTINCT dealer_code) as dealer_count
+    FROM achievements 
+    WHERE year = ? AND month = ?`,
+    [currentYear, currentMonth],
+    (err, results) => {
+      if (!err && results.length > 0) {
+        stats.currentMonthAchievements = {
+          amount: results[0].total_amount || 0,
+          quantity: results[0].total_quantity || 0,
+          dealers: results[0].dealer_count || 0
+        };
+      } else {
+        stats.currentMonthAchievements = { amount: 0, quantity: 0, dealers: 0 };
+      }
+      completedQueries++;
+      sendResponse();
+    }
+  );
+
+  // 4. Total overdue amount
+  db.query(
+    `SELECT 
+      COALESCE(SUM(lower_overdue_amount), 0) as lower_total,
+      COALESCE(SUM(upper_overdue_amount), 0) as upper_total,
+      COUNT(DISTINCT dealer_code) as dealer_count
+    FROM overdue_report`,
+    (err, results) => {
+      if (!err && results.length > 0) {
+        stats.overdue = {
+          lowerTotal: results[0].lower_total || 0,
+          upperTotal: results[0].upper_total || 0,
+          dealers: results[0].dealer_count || 0
+        };
+      } else {
+        stats.overdue = { lowerTotal: 0, upperTotal: 0, dealers: 0 };
+      }
+      completedQueries++;
+      sendResponse();
+    }
+  );
+
+  // 5. Delinquent dealers count
+  db.query('SELECT COUNT(*) as total FROM dealers WHERE status = "delinquent"', (err, results) => {
+    if (!err && results.length > 0) {
+      stats.delinquentDealers = results[0].total;
+    } else {
+      stats.delinquentDealers = 0;
+    }
+    completedQueries++;
+    sendResponse();
+  });
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

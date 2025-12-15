@@ -165,4 +165,20 @@ CREATE TABLE IF NOT EXISTS forecast_vs_achievement (
     INDEX idx_fc_vs_ach_year_month (year, month)
 );
 
+-- Credit Days Report Table (stores credit days data from PDF uploads)
+CREATE TABLE IF NOT EXISTS credit_days_report (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    dealer_code VARCHAR(50) NOT NULL,
+    year INT NOT NULL,
+    month INT NOT NULL CHECK (month >= 1 AND month <= 12),
+    credit_days INT NOT NULL DEFAULT 0,
+    report_date DATE NOT NULL COMMENT 'Date from PDF (Printing Date)',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (dealer_code) REFERENCES dealers(dealer_code) ON DELETE CASCADE,
+    UNIQUE KEY unique_credit_days (dealer_code, year, month, report_date),
+    INDEX idx_dealer_month_date (dealer_code, year, month, report_date),
+    INDEX idx_report_date (report_date)
+);
+
 

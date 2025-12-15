@@ -10,6 +10,7 @@ const CreditDays = () => {
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [latestDate, setLatestDate] = useState(null);
   
   // Filters
   const [selectedYear, setSelectedYear] = useState('');
@@ -28,6 +29,7 @@ const CreditDays = () => {
       
       const response = await axios.get('/api/credit-days/report', { params });
       setReportData(response.data.data || []);
+      setLatestDate(response.data.latestDate || null);
     } catch (error) {
       console.error('Error fetching credit days report:', error);
       if (error.response?.status !== 404) {
@@ -175,7 +177,19 @@ const CreditDays = () => {
   return (
     <div className="credit-days-page">
       <div className="page-header">
-        <h1>Credit Days Report</h1>
+        <div className="header-content">
+          <h1>Credit Days Report</h1>
+          {latestDate && (
+            <div className="last-updated">
+              <Calendar size={16} />
+              <span>Data as of: {new Date(latestDate).toLocaleDateString('en-IN', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}</span>
+            </div>
+          )}
+        </div>
         <div className="header-actions">
           <button className="btn btn-secondary" onClick={handleExport} disabled={loading || reportData.length === 0}>
             <Download size={18} />

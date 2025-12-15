@@ -132,6 +132,13 @@ const DelinquentDealers = () => {
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
+  // Format currency
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      maximumFractionDigits: 0
+    }).format(amount || 0);
+  };
+
   return (
     <div className="delinquent-dealers">
       <div className="page-header">
@@ -234,12 +241,14 @@ const DelinquentDealers = () => {
                 <th>Last Order Date</th>
                 <th>Months Inactive</th>
                 <th>Category</th>
+                <th>Lower Overdue</th>
+                <th>Upper Overdue</th>
               </tr>
             </thead>
             <tbody>
               {filteredDealers.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="no-data">
+                  <td colSpan="8" className="no-data">
                     {searchTerm || selectedCategory !== 'all' 
                       ? 'No dealers found matching your criteria' 
                       : 'No delinquent dealers found. Upload Sales Register Excel file to analyze dealer activity.'}
@@ -264,6 +273,18 @@ const DelinquentDealers = () => {
                       <span className={`category-badge category-${dealer.months_inactive}`}>
                         {dealer.category}
                       </span>
+                    </td>
+                    <td>
+                      {dealer.lower_limit_overdue > 0 
+                        ? formatCurrency(dealer.lower_limit_overdue) 
+                        : <span style={{ color: '#999' }}>0</span>
+                      }
+                    </td>
+                    <td>
+                      {dealer.upper_limit_overdue > 0 
+                        ? formatCurrency(dealer.upper_limit_overdue) 
+                        : <span style={{ color: '#999' }}>0</span>
+                      }
                     </td>
                   </tr>
                 ))

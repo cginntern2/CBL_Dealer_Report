@@ -7,8 +7,14 @@
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 24px;
+}
+
+.header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .page-header h1 {
@@ -16,6 +22,25 @@
   font-weight: 600;
   color: #1a1a1a;
   margin: 0;
+}
+
+.last-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  font-style: normal;
+}
+
+.last-updated svg {
+  color: #ffffff;
+  flex-shrink: 0;
 }
 
 .header-actions {

@@ -91,23 +91,37 @@ router.get('/report', (req, res) => {
     ...queryParams
   ];
   
-  db.query(query, params, (err, results) => {
-    if (err) {
-      console.error('Error fetching overdue report:', err);
-      console.error('Query:', query);
-      console.error('Params:', params);
-      console.error('Error code:', err.code);
-      console.error('Error SQL state:', err.sqlState);
-      console.error('Full error:', JSON.stringify(err, null, 2));
-      
-      // Check if it's a table not found error
-      if (err.message && (err.message.includes('doesn\'t exist') || err.message.includes('Unknown table'))) {
-        return res.status(500).json({ 
-          error: 'Database table missing', 
-          details: 'overdue_report table does not exist. Please run: node server/create-overdue-report-table.js',
-          sqlError: err.message
-        });
-      }
+  // First, get the most recent current_date (To Date) from overdue_report
+  const getLatestDateQuery = `SELECT MAX(\`current_date\`) as latest_date FROM overdue_report`;
+  
+  db.query(getLatestDateQuery, (dateErr, dateResults) => {
+    let latestDate = null;
+    
+    if (dateErr) {
+      console.error('Error fetching latest date:', dateErr);
+      // Continue even if date query fails
+    } else if (dateResults && dateResults.length > 0 && dateResults[0].latest_date) {
+      latestDate = dateResults[0].latest_date;
+    }
+  
+    // Now fetch the main report data
+    db.query(query, params, (err, results) => {
+      if (err) {
+        console.error('Error fetching overdue report:', err);
+        console.error('Query:', query);
+        console.error('Params:', params);
+        console.error('Error code:', err.code);
+        console.error('Error SQL state:', err.sqlState);
+        console.error('Full error:', JSON.stringify(err, null, 2));
+        
+        // Check if it's a table not found error
+        if (err.message && (err.message.includes('doesn\'t exist') || err.message.includes('Unknown table'))) {
+          return res.status(500).json({ 
+            error: 'Database table missing', 
+            details: 'overdue_report table does not exist. Please run: node server/create-overdue-report-table.js',
+            sqlError: err.message
+          });
+        }
       
       // Check if it's a column not found error
       if (err.message && err.message.includes('Unknown column')) {
@@ -132,6 +146,7 @@ router.get('/report', (req, res) => {
     res.json({
       success: true,
       data: data,
+      latestDate: latestDate, // Most recent "To Date" from overdue_report
       summary: {
         total_dealers: data.length,
         lower_limit_overdue_count: data.filter(r => parseFloat(r.lower_limit_overdue || 0) > 0).length,
@@ -140,6 +155,7 @@ router.get('/report', (req, res) => {
         total_upper_limit_overdue: data.reduce((sum, r) => sum + parseFloat(r.upper_limit_overdue || 0), 0)
       }
     });
+  });
   });
 });
 
@@ -407,8 +423,56 @@ router.post('/upload', upload.single('file'), (req, res) => {
       });
     }
     
-    // Parse data starting from row 9 (index 8)
-    const currentDate = new Date();
+    // Extract "To Date" from cell A5 (row 5, index 4, column A, index 0)
+    let toDate = null;
+    let currentDate = new Date(); // Default to current date if A5 is not found
+    
+    if (data.length > 4 && Array.isArray(data[4]) && data[4][0]) {
+      const a5Value = String(data[4][0]).trim();
+      console.log('Overdue Upload - Cell A5 value:', a5Value);
+      
+      // Try to parse the date from A5
+      // Could be in various formats: "To Date: 15/12/2025", "15/12/2025", "2025-12-15", etc.
+      const dateMatch = a5Value.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+      if (dateMatch) {
+        const dateStr = dateMatch[1];
+        // Try parsing different date formats
+        const dateParts = dateStr.split(/[\/\-]/);
+        if (dateParts.length === 3) {
+          let day, month, year;
+          // Try DD/MM/YYYY or DD-MM-YYYY format
+          if (dateParts[2].length === 4) {
+            day = parseInt(dateParts[0]);
+            month = parseInt(dateParts[1]);
+            year = parseInt(dateParts[2]);
+          } else {
+            // Try YYYY-MM-DD format
+            year = parseInt(dateParts[0]);
+            month = parseInt(dateParts[1]);
+            day = parseInt(dateParts[2]);
+          }
+          
+          if (day && month && year) {
+            currentDate = new Date(year, month - 1, day);
+            toDate = currentDate;
+            console.log('Overdue Upload - Parsed To Date from A5:', currentDate.toISOString().split('T')[0]);
+          }
+        }
+      } else {
+        // Try direct date parsing
+        const parsedDate = new Date(a5Value);
+        if (!isNaN(parsedDate.getTime())) {
+          currentDate = parsedDate;
+          toDate = currentDate;
+          console.log('Overdue Upload - Parsed To Date from A5 (direct):', currentDate.toISOString().split('T')[0]);
+        }
+      }
+    }
+    
+    if (!toDate) {
+      console.log('Overdue Upload - Could not parse To Date from A5, using current date');
+    }
+    
     const reportYear = currentDate.getFullYear();
     const reportMonth = currentDate.getMonth() + 1;
     const daysIntoMonth = currentDate.getDate();
