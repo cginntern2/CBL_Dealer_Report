@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Search, Upload, Download, Calendar, Filter, AlertCircle, CheckCircle, X } from 'lucide-react';
+import { Search, Upload, Download, Calendar, Filter, AlertCircle, CheckCircle, X, RefreshCw } from 'lucide-react';
 import './CreditDays.css';
 
 const CreditDays = () => {
@@ -53,6 +53,11 @@ const CreditDays = () => {
     fetchReport();
     fetchTerritories();
   }, [fetchReport, fetchTerritories]);
+
+  const handleRefresh = () => {
+    fetchReport();
+    fetchTerritories();
+  };
 
   // Handle file selection
   const handleFileChange = (e) => {
@@ -191,6 +196,9 @@ const CreditDays = () => {
           )}
         </div>
         <div className="header-actions">
+          <button className="btn btn-secondary" onClick={handleRefresh} disabled={loading}>
+            <RefreshCw size={18} /> Refresh
+          </button>
           <button className="btn btn-secondary" onClick={handleExport} disabled={loading || reportData.length === 0}>
             <Download size={18} />
             Export Excel

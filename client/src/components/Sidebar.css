@@ -1,7 +1,4 @@
 .sidebar {
-  position: fixed;
-  left: 0;
-  top: 0;
   width: 260px;
   height: 100vh;
   background: linear-gradient(180deg, #1e3a8a 0%, #1e40af 100%);
@@ -10,7 +7,10 @@
   flex-direction: column;
   box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
   transition: width 0.3s ease;
-  z-index: 1000;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .sidebar.collapsed {
@@ -18,12 +18,12 @@
 }
 
 .sidebar-header {
-  padding: 25px 20px;
+  padding: 18px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .sidebar-title {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 600;
   color: #ffffff;
   white-space: nowrap;
@@ -45,13 +45,14 @@
 .nav-item {
   display: flex;
   align-items: center;
-  padding: 14px 20px;
+  padding: 10px 14px;
   color: rgba(255, 255, 255, 0.8);
   text-decoration: none;
   transition: all 0.3s ease;
   margin: 5px 10px;
   border-radius: 8px;
   white-space: nowrap;
+  font-size: 14px;
 }
 
 .nav-item:hover {
@@ -139,12 +140,10 @@
 
   .sidebar:not(.collapsed) {
     width: 260px;
-    z-index: 1001;
+    z-index: 11;
   }
 
-  .main-content {
-    margin-left: 80px;
-  }
+  /* main-content no longer needs margin-left because sidebar participates in flex layout */
 }
 
 

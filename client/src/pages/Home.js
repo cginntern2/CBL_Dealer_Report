@@ -6,7 +6,8 @@ import {
   CreditCard,
   UserX,
   Users,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import './Home.css';
 
@@ -14,8 +15,7 @@ const Home = () => {
   const navigate = useNavigate();
   const [welcomeMessage, setWelcomeMessage] = useState('Welcome to CBL Dealer Report System');
 
-  useEffect(() => {
-    // Fetch welcome message from API
+  const fetchWelcome = () => {
     axios.get('/api/welcome')
       .then(response => {
         setWelcomeMessage(response.data.message);
@@ -24,6 +24,11 @@ const Home = () => {
         console.error('Error fetching welcome message:', error);
         setWelcomeMessage('Welcome to CBL Dealer Report System');
       });
+  };
+
+  useEffect(() => {
+    // Fetch welcome message from API
+    fetchWelcome();
   }, []);
 
   const handleModuleClick = (path) => {
@@ -32,6 +37,11 @@ const Home = () => {
 
   return (
     <div className="home-page">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+        <button className="btn btn-secondary" onClick={fetchWelcome}>
+          <RefreshCw size={18} /> Refresh
+        </button>
+      </div>
       <div className="welcome-section">
         <div className="welcome-card">
           <h2 className="welcome-title">{welcomeMessage}</h2>

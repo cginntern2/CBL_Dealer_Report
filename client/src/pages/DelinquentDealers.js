@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Upload, Search, Trash2, X, TrendingDown, Calendar, Users } from 'lucide-react';
+import { Upload, Search, Trash2, X, TrendingDown, Calendar, Users, RefreshCw } from 'lucide-react';
 import './DelinquentDealers.css';
 
 const DelinquentDealers = () => {
@@ -24,6 +24,11 @@ const DelinquentDealers = () => {
   useEffect(() => {
     fetchDelinquentDealers();
   }, [selectedCategory, showAll]);
+
+  const handleRefresh = () => {
+    fetchDelinquentDealers();
+    fetchStats();
+  };
 
   const fetchDelinquentDealers = async () => {
     setLoading(true);
@@ -144,6 +149,14 @@ const DelinquentDealers = () => {
       <div className="page-header">
         <h1 className="page-title">Delinquent Dealers</h1>
         <div className="header-actions">
+          <button
+            className="btn btn-secondary"
+            onClick={handleRefresh}
+            disabled={loading}
+            title="Refresh"
+          >
+            <RefreshCw size={18} /> Refresh
+          </button>
           <button 
             className="btn btn-danger"
             onClick={handleClearAll}

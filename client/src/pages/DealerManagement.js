@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Upload, Plus, Search, Trash2, X } from 'lucide-react';
+import { Upload, Plus, Search, Trash2, X, RefreshCw } from 'lucide-react';
 import './DealerManagement.css';
 
 const DealerManagement = () => {
@@ -199,6 +199,16 @@ const DealerManagement = () => {
       <div className="page-header">
         <h1 className="page-title">Dealer Management</h1>
         <div className="header-actions">
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              fetchTerritories();
+              fetchDealers();
+            }}
+            title="Refresh"
+          >
+            <RefreshCw size={18} /> Refresh
+          </button>
           <button 
             className="btn btn-danger"
             onClick={handleClearAll}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Search, X, Edit2, AlertCircle, TrendingDown, TrendingUp, Calendar, Filter, Save, Download, Upload } from 'lucide-react';
+import { Search, X, Edit2, AlertCircle, TrendingDown, TrendingUp, Calendar, Filter, Save, Download, Upload, RefreshCw } from 'lucide-react';
 import './OverdueReport.css';
 
 const OverdueReport = () => {
@@ -62,6 +62,11 @@ const OverdueReport = () => {
     fetchReport();
     fetchTerritories();
   }, [fetchReport, fetchTerritories]);
+
+  const handleRefresh = () => {
+    fetchReport();
+    fetchTerritories();
+  };
 
   // Fetch all dealers for manual limit setting
   const fetchAllDealers = async () => {
@@ -323,6 +328,11 @@ const OverdueReport = () => {
               })}</span>
             </div>
           )}
+        </div>
+        <div className="header-actions">
+          <button className="btn btn-secondary" onClick={handleRefresh} disabled={loading} title="Refresh">
+            <RefreshCw size={18} /> Refresh
+          </button>
         </div>
       </div>
 

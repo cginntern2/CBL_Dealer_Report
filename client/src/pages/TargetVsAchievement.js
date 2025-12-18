@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Upload, Search, X, TrendingUp, TrendingDown, Target, Calendar, Filter, BarChart3, Download, Edit2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Upload, Search, X, TrendingUp, TrendingDown, Target, Calendar, Filter, BarChart3, Download, Edit2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import './TargetVsAchievement.css';
 
 const TargetVsAchievement = () => {
@@ -21,7 +21,6 @@ const TargetVsAchievement = () => {
   const [totalRecords, setTotalRecords] = useState(0);
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [applicationItems, setApplicationItems] = useState({});
-  const [showBreakdownModal, setShowBreakdownModal] = useState(false);
   const [breakdownType, setBreakdownType] = useState(''); // 'abp' or 'forecast'
   const [breakdownData, setBreakdownData] = useState([]);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
@@ -29,6 +28,7 @@ const TargetVsAchievement = () => {
   const [dealerDetails, setDealerDetails] = useState({});
   const [breakdownSearchTerm, setBreakdownSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [expandedTerritories, setExpandedTerritories] = useState(new Set());
   
   // Filters
   const [selectedYear, setSelectedYear] = useState('');
@@ -89,14 +89,6 @@ const TargetVsAchievement = () => {
       const response = await axios.get('/api/targets/filters');
       setAvailableYears(response.data.years || []);
       setAvailableMonths(response.data.months || []);
-      
-      // Set default to current year/month if available
-      if (response.data.years && response.data.years.length > 0 && !selectedYear) {
-        setSelectedYear(response.data.years[0]);
-      }
-      if (response.data.months && response.data.months.length > 0 && !selectedMonth) {
-        setSelectedMonth(response.data.months[response.data.months.length - 1]);
-      }
     } catch (error) {
       console.error('Error fetching filters:', error);
     }
@@ -122,6 +114,16 @@ const TargetVsAchievement = () => {
     fetchReport();
     fetchStats();
   }, [fetchReport, fetchStats, selectedYear, selectedMonth, selectedTerritory, showAll]);
+
+  const handleRefresh = () => {
+    fetchFilters();
+    fetchTerritories();
+    fetchReport();
+    fetchStats();
+    if (breakdownType) {
+      fetchBreakdown(breakdownType);
+    }
+  };
 
   // Handle file upload
   const handleFileUpload = async (type) => {
@@ -250,7 +252,10 @@ const TargetVsAchievement = () => {
   const fetchBreakdown = useCallback(async (type) => {
     setBreakdownLoading(true);
     setBreakdownType(type);
-    setShowBreakdownModal(true);
+    setExpandedDealer(null);
+    setExpandedTerritories(new Set());
+    setBreakdownSearchTerm('');
+    setSortConfig({ key: null, direction: 'asc' });
     
     try {
       const params = {};
@@ -288,7 +293,8 @@ const TargetVsAchievement = () => {
       console.error('Error fetching breakdown:', error);
       console.error('Error details:', error.response?.data);
       alert('Failed to fetch breakdown: ' + (error.response?.data?.error || error.message));
-      setShowBreakdownModal(false);
+      setBreakdownData([]);
+      setBreakdownType('');
     } finally {
       setBreakdownLoading(false);
     }
@@ -370,7 +376,105 @@ const TargetVsAchievement = () => {
     setSortConfig({ key, direction });
   };
 
-  // Get sorted and filtered breakdown data
+  // Group breakdown data by territory and calculate averages
+  const getTerritoryGroupedData = () => {
+    if (!breakdownData || breakdownData.length === 0) return [];
+    
+    // Group by territory
+    const territoryMap = {};
+    breakdownData.forEach(item => {
+      const territoryName = item.territory_name || 'N/A';
+      if (!territoryMap[territoryName]) {
+        territoryMap[territoryName] = [];
+      }
+      territoryMap[territoryName].push(item);
+    });
+    
+    // Calculate averages per territory and create territory objects
+    const territories = Object.keys(territoryMap).map(territoryName => {
+      const dealers = territoryMap[territoryName];
+      
+      // Calculate average percentages
+      const validAmountPercents = dealers
+        .map(d => parseFloat(d.amount_percentage || 0))
+        .filter(p => !isNaN(p) && p > 0);
+      const avgAmountPercent = validAmountPercents.length > 0
+        ? validAmountPercents.reduce((sum, p) => sum + p, 0) / validAmountPercents.length
+        : 0;
+      
+      const validQtyPercents = dealers
+        .map(d => parseFloat(d.quantity_percentage || 0))
+        .filter(p => !isNaN(p) && p > 0);
+      const avgQtyPercent = validQtyPercents.length > 0
+        ? validQtyPercents.reduce((sum, p) => sum + p, 0) / validQtyPercents.length
+        : 0;
+      
+      // Calculate totals
+      const totalTargetAmount = dealers.reduce((sum, d) => {
+        const target = breakdownType === 'abp' ? (d.abp_target_amount || 0) : (d.forecast_target_amount || 0);
+        return sum + parseFloat(target);
+      }, 0);
+      
+      const totalAchievementAmount = dealers.reduce((sum, d) => sum + parseFloat(d.achievement_amount || 0), 0);
+      const totalTargetQty = dealers.reduce((sum, d) => {
+        const qty = breakdownType === 'abp' ? (d.abp_target_quantity || 0) : (d.forecast_target_quantity || 0);
+        return sum + parseFloat(qty);
+      }, 0);
+      const totalAchievementQty = dealers.reduce((sum, d) => sum + parseFloat(d.achievement_quantity || 0), 0);
+      
+      return {
+        territoryName,
+        dealers,
+        avgAmountPercent,
+        avgQtyPercent,
+        totalTargetAmount,
+        totalAchievementAmount,
+        totalTargetQty,
+        totalAchievementQty,
+        dealerCount: dealers.length
+      };
+    });
+    
+    // Sort territories by territory name
+    territories.sort((a, b) => {
+      if (a.territoryName === 'N/A') return 1;
+      if (b.territoryName === 'N/A') return -1;
+      return a.territoryName.localeCompare(b.territoryName);
+    });
+    
+    // Apply search filter to territories and their dealers
+    if (breakdownSearchTerm) {
+      const searchLower = breakdownSearchTerm.toLowerCase();
+      return territories.map(territory => {
+        const filteredDealers = territory.dealers.filter(item => 
+          item.dealer_code?.toLowerCase().includes(searchLower) ||
+          item.dealer_name?.toLowerCase().includes(searchLower) ||
+          item.territory_name?.toLowerCase().includes(searchLower)
+        );
+        
+        // Only include territory if it matches search or has matching dealers
+        if (territory.territoryName.toLowerCase().includes(searchLower) || filteredDealers.length > 0) {
+          return { ...territory, dealers: filteredDealers };
+        }
+        return null;
+      }).filter(t => t !== null);
+    }
+    
+    return territories;
+  };
+
+  // Toggle territory expansion
+  const toggleTerritory = (territoryName) => {
+    const newExpanded = new Set(expandedTerritories);
+    if (newExpanded.has(territoryName)) {
+      newExpanded.delete(territoryName);
+    } else {
+      newExpanded.add(territoryName);
+    }
+    setExpandedTerritories(newExpanded);
+  };
+
+  // Get sorted and filtered breakdown data (for backward compatibility, but now we use territory grouping)
   const getSortedBreakdownData = () => {
     let filtered = breakdownData;
     
@@ -480,6 +584,11 @@ const TargetVsAchievement = () => {
           <h1><Target className="header-icon" /> Target vs Achievement Report</h1>
           <p>Manage ABP targets, Forecast targets, and track achievements</p>
         </div>
+        <div className="header-actions">
+          <button className="btn btn-secondary" onClick={handleRefresh} title="Refresh">
+            <RefreshCw size={18} /> Refresh
+          </button>
+        </div>
       </div>
 
 
@@ -575,6 +684,306 @@ const TargetVsAchievement = () => {
           View Forecast vs Achievement
         </button>
       </div>
+
+      {/* Breakdown (inline, no popup) */}
+      {breakdownType && (
+        <div style={{ marginTop: '10px', marginBottom: '30px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <h2 style={{ margin: 0, fontSize: '18px' }}>
+              {breakdownType === 'abp' ? 'ABP vs Achievement' : 'Forecast vs Achievement'} - Dealer Breakdown
+            </h2>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setBreakdownType('');
+                setBreakdownData([]);
+                setExpandedDealer(null);
+                setExpandedTerritories(new Set());
+                setBreakdownSearchTerm('');
+                setSortConfig({ key: null, direction: 'asc' });
+              }}
+            >
+              Close
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginTop: '12px' }}>
+            <div style={{ flex: 1, minWidth: '250px' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#666' }} />
+                <input
+                  type="text"
+                  placeholder="Search by dealer code, name, or territory..."
+                  value={breakdownSearchTerm}
+                  onChange={(e) => setBreakdownSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px 10px 40px',
+                    border: '1px solid #ddd',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+            </div>
+            <div style={{ fontSize: '14px', color: '#666' }}>
+              {(() => {
+                const territoryData = getTerritoryGroupedData();
+                const totalDealers = territoryData.reduce((sum, t) => sum + t.dealerCount, 0);
+                return `Showing ${territoryData.length} territories, ${totalDealers} dealers`;
+              })()}
+            </div>
+          </div>
+
+          <div style={{ marginTop: '12px' }}>
+            {breakdownLoading ? (
+              <div className="loading">Loading breakdown...</div>
+            ) : breakdownData.length === 0 ? (
+              <div className="no-data">No data available for selected filters.</div>
+            ) : (
+              <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh' }}>
+                <table className="report-table" style={{ fontSize: '14px' }}>
+                  <thead style={{ position: 'sticky', top: 0, background: '#f9fafb', zIndex: 10 }}>
+                    <tr>
+                      <th style={{ width: '40px' }}></th>
+                      <th>Territory / Dealer Code</th>
+                      <th>Dealer Name</th>
+                      <th>Target Amount</th>
+                      <th>Achievement Amount</th>
+                      <th>Amount %</th>
+                      <th>Target Qty</th>
+                      <th>Achievement Qty</th>
+                      <th>Quantity %</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getTerritoryGroupedData().map((territory, territoryIndex) => {
+                      const isTerritoryExpanded = expandedTerritories.has(territory.territoryName);
+                      
+                      return (
+                        <React.Fragment key={`territory-${territoryIndex}`}>
+                          {/* Territory Row */}
+                          <tr
+                            style={{ 
+                              cursor: 'pointer',
+                              backgroundColor: '#e0e7ff',
+                              fontWeight: '600'
+                            }}
+                            onClick={() => toggleTerritory(territory.territoryName)}
+                            className="territory-row"
+                          >
+                            <td>{isTerritoryExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</td>
+                            <td colSpan="2">
+                              <strong>{territory.territoryName}</strong>
+                              <span style={{ marginLeft: '12px', fontSize: '12px', fontWeight: 'normal', color: '#6b7280' }}>
+                                ({territory.dealerCount} {territory.dealerCount === 1 ? 'dealer' : 'dealers'})
+                              </span>
+                            </td>
+                            <td>{formatCurrency(territory.totalTargetAmount)}</td>
+                            <td>{formatCurrency(territory.totalAchievementAmount)}</td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span className={territory.avgAmountPercent >= 100 ? 'positive' : territory.avgAmountPercent >= 80 ? 'warning' : 'negative'}>
+                                  {formatPercentage(territory.avgAmountPercent)}
+                                </span>
+                                <div style={{ width: '60px', height: '8px', background: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                                  <div style={{
+                                    width: `${Math.min(territory.avgAmountPercent, 100)}%`,
+                                    height: '100%',
+                                    background: territory.avgAmountPercent >= 100 ? '#10b981' : territory.avgAmountPercent >= 80 ? '#f59e0b' : '#ef4444',
+                                    transition: 'width 0.3s'
+                                  }} />
+                                </div>
+                              </div>
+                            </td>
+                            <td>{formatCurrency(territory.totalTargetQty)}</td>
+                            <td>{formatCurrency(territory.totalAchievementQty)}</td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span className={territory.avgQtyPercent >= 100 ? 'positive' : territory.avgQtyPercent >= 80 ? 'warning' : 'negative'}>
+                                  {formatPercentage(territory.avgQtyPercent)}
+                                </span>
+                                <div style={{ width: '60px', height: '8px', background: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                                  <div style={{
+                                    width: `${Math.min(territory.avgQtyPercent, 100)}%`,
+                                    height: '100%',
+                                    background: territory.avgQtyPercent >= 100 ? '#10b981' : territory.avgQtyPercent >= 80 ? '#f59e0b' : '#ef4444',
+                                    transition: 'width 0.3s'
+                                  }} />
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: '500',
+                                background: (territory.avgAmountPercent >= 100 && territory.avgQtyPercent >= 100) ? '#d1fae5' : (territory.avgAmountPercent >= 80 || territory.avgQtyPercent >= 80) ? '#fef3c7' : '#fee2e2',
+                                color: (territory.avgAmountPercent >= 100 && territory.avgQtyPercent >= 100) ? '#065f46' : (territory.avgAmountPercent >= 80 || territory.avgQtyPercent >= 80) ? '#92400e' : '#991b1b'
+                              }}>
+                                {(territory.avgAmountPercent >= 100 && territory.avgQtyPercent >= 100) ? '✓ On Target' : (territory.avgAmountPercent >= 80 || territory.avgQtyPercent >= 80) ? '⚠ Close' : '✗ Below Target'}
+                              </span>
+                            </td>
+                          </tr>
+                          
+                          {/* Dealers under Territory (when expanded) */}
+                          {isTerritoryExpanded && territory.dealers.map((item, dealerIndex) => {
+                            const dealerKey = `${item.dealer_code}-${item.year}-${item.month}`;
+                            const isExpanded = expandedDealer === dealerKey;
+                            const targetAmount = breakdownType === 'abp' ? (item.abp_target_amount || 0) : (item.forecast_target_amount || 0);
+                            const achievementAmount = item.achievement_amount || 0;
+                            const amountPercentage = item.amount_percentage || 0;
+                            const targetQuantity = breakdownType === 'abp' ? (item.abp_target_quantity || 0) : (item.forecast_target_quantity || 0);
+                            const achievementQuantity = item.achievement_quantity || 0;
+                            const quantityPercentage = item.quantity_percentage || 0;
+                            const details = dealerDetails[dealerKey];
+
+                            return (
+                              <React.Fragment key={`dealer-${territoryIndex}-${dealerIndex}`}>
+                                <tr
+                                  style={{ cursor: 'pointer', backgroundColor: '#f9fafb' }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleDealerDetails(item.dealer_code, item.year, item.month);
+                                  }}
+                                  className="dealer-row"
+                                >
+                                  <td>{isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</td>
+                                  <td><strong>{item.dealer_code}</strong></td>
+                                  <td>{item.dealer_name}</td>
+                                  <td>{targetAmount > 0 ? formatCurrency(targetAmount) : <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>}</td>
+                                  <td>{achievementAmount > 0 ? formatCurrency(achievementAmount) : <span style={{ color: '#999', fontStyle: 'italic' }}>No sales</span>}</td>
+                                  <td>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span className={amountPercentage >= 100 ? 'positive' : amountPercentage >= 80 ? 'warning' : 'negative'}>
+                                        {formatPercentage(amountPercentage)}
+                                      </span>
+                                      <div style={{ width: '60px', height: '8px', background: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                                        <div style={{
+                                          width: `${Math.min(amountPercentage, 100)}%`,
+                                          height: '100%',
+                                          background: amountPercentage >= 100 ? '#10b981' : amountPercentage >= 80 ? '#f59e0b' : '#ef4444',
+                                          transition: 'width 0.3s'
+                                        }} />
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td>{targetQuantity > 0 ? targetQuantity.toLocaleString() : <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>}</td>
+                                  <td>{achievementQuantity > 0 ? achievementQuantity.toLocaleString() : <span style={{ color: '#999', fontStyle: 'italic' }}>No sales</span>}</td>
+                                  <td>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span className={quantityPercentage >= 100 ? 'positive' : quantityPercentage >= 80 ? 'warning' : 'negative'}>
+                                        {formatPercentage(quantityPercentage)}
+                                      </span>
+                                      <div style={{ width: '60px', height: '8px', background: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                                        <div style={{
+                                          width: `${Math.min(quantityPercentage, 100)}%`,
+                                          height: '100%',
+                                          background: quantityPercentage >= 100 ? '#10b981' : quantityPercentage >= 80 ? '#f59e0b' : '#ef4444',
+                                          transition: 'width 0.3s'
+                                        }} />
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <span style={{
+                                      padding: '4px 8px',
+                                      borderRadius: '4px',
+                                      fontSize: '12px',
+                                      fontWeight: '500',
+                                      background: (amountPercentage >= 100 && quantityPercentage >= 100) ? '#d1fae5' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '#fef3c7' : '#fee2e2',
+                                      color: (amountPercentage >= 100 && quantityPercentage >= 100) ? '#065f46' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '#92400e' : '#991b1b'
+                                    }}>
+                                      {(amountPercentage >= 100 && quantityPercentage >= 100) ? '✓ On Target' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '⚠ Close' : '✗ Below Target'}
+                                    </span>
+                                  </td>
+                                </tr>
+
+                                {isExpanded && (
+                                  <tr>
+                                    <td colSpan="10" style={{ padding: '20px', background: '#f3f4f6' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                  {/* Summary Cards */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                                    <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Target Quantity</div>
+                                      <div style={{ fontSize: '18px', fontWeight: '600' }}>
+                                        {formatCurrency(breakdownType === 'abp' ? (item.abp_target_quantity || 0) : (item.forecast_target_quantity || 0))}
+                                      </div>
+                                    </div>
+                                    <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Achievement Quantity</div>
+                                      <div style={{ fontSize: '18px', fontWeight: '600' }}>
+                                        {formatCurrency(item.achievement_quantity || 0)}
+                                      </div>
+                                    </div>
+                                    <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Quantity %</div>
+                                      <div style={{ fontSize: '18px', fontWeight: '600', color: (item.quantity_percentage || 0) >= 100 ? '#10b981' : '#ef4444' }}>
+                                        {formatPercentage(item.quantity_percentage || 0)}
+                                      </div>
+                                    </div>
+                                    <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Amount %</div>
+                                      <div style={{ fontSize: '18px', fontWeight: '600', color: (item.amount_percentage || 0) >= 100 ? '#10b981' : '#ef4444' }}>
+                                        {formatPercentage(item.amount_percentage || 0)}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Application Breakdown */}
+                                  {details && !details.error && (
+                                    <div>
+                                      <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: '600' }}>Application-wise Breakdown</h4>
+                                      {details.achievement && details.achievement.length > 0 ? (
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '8px' }}>
+                                          {details.achievement.map((app, idx) => (
+                                            <div key={idx} style={{ padding: '10px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '13px' }}>
+                                              <div style={{ fontWeight: '600', marginBottom: '4px' }}>{app.application_name || 'Unknown'}</div>
+                                              <div style={{ color: '#666', fontSize: '12px' }}>
+                                                Qty: {formatCurrency(app.qty || 0)} | Amount: {formatCurrency(app.amount || 0)}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '6px', color: '#92400e', fontSize: '13px' }}>
+                                          No application-level data available for this dealer.
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {details && details.error && (
+                                    <div style={{ padding: '12px', background: '#fee2e2', borderRadius: '6px', color: '#991b1b', fontSize: '13px' }}>
+                                      {details.error}
+                                    </div>
+                                  )}
+
+                                      {!details && (
+                                        <div style={{ padding: '12px', background: '#f3f4f6', borderRadius: '6px', color: '#666', fontSize: '13px', textAlign: 'center' }}>
+                                          Loading application details...
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ABP Upload Modal */}
       {showABPModal && (
@@ -766,314 +1175,6 @@ const TargetVsAchievement = () => {
         </div>
       )}
 
-      {/* Dealer Breakdown Modal - Enhanced Interactive UI */}
-      {showBreakdownModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '1200px', width: '95%', maxHeight: '90vh' }}>
-            <div className="modal-header">
-              <h2>{breakdownType === 'abp' ? 'ABP vs Achievement' : 'Forecast vs Achievement'} - Dealer Breakdown</h2>
-              <button className="modal-close" onClick={() => {
-                setShowBreakdownModal(false);
-                setBreakdownData([]);
-                setBreakdownType('');
-                setExpandedDealer(null);
-                setBreakdownSearchTerm('');
-                setSortConfig({ key: null, direction: 'asc' });
-              }}>
-                <X size={20} />
-              </button>
-            </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Search and Stats Bar */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <div style={{ flex: 1, minWidth: '250px' }}>
-                  <div style={{ position: 'relative' }}>
-                    <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#666' }} />
-                    <input
-                      type="text"
-                      placeholder="Search by dealer code, name, or territory..."
-                      value={breakdownSearchTerm}
-                      onChange={(e) => setBreakdownSearchTerm(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px 10px 40px',
-                        border: '1px solid #ddd',
-                        borderRadius: '6px',
-                        fontSize: '14px'
-                      }}
-                    />
-                  </div>
-                </div>
-                <div style={{ fontSize: '14px', color: '#666' }}>
-                  Showing {getSortedBreakdownData().length} of {breakdownData.length} dealers
-                </div>
-              </div>
-
-              {breakdownLoading ? (
-                <div className="loading">Loading breakdown...</div>
-              ) : breakdownData.length === 0 ? (
-                <div className="no-data">No data available for selected filters.</div>
-              ) : (
-                <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh' }}>
-                  <table className="report-table" style={{ fontSize: '14px' }}>
-                    <thead style={{ position: 'sticky', top: 0, background: '#f9fafb', zIndex: 10 }}>
-                      <tr>
-                        <th style={{ width: '40px' }}></th>
-                        <th 
-                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                          onClick={() => handleSort('dealer_code')}
-                        >
-                          Dealer Code {sortConfig.key === 'dealer_code' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </th>
-                        <th 
-                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                          onClick={() => handleSort('dealer_name')}
-                        >
-                          Dealer Name {sortConfig.key === 'dealer_name' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </th>
-                        <th>Territory</th>
-                        <th 
-                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                          onClick={() => handleSort(breakdownType === 'abp' ? 'abp_target_amount' : 'forecast_target_amount')}
-                        >
-                          Target Amount {sortConfig.key === (breakdownType === 'abp' ? 'abp_target_amount' : 'forecast_target_amount') && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </th>
-                        <th 
-                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                          onClick={() => handleSort('achievement_amount')}
-                        >
-                          Achievement Amount {sortConfig.key === 'achievement_amount' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </th>
-                        <th 
-                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                          onClick={() => handleSort('amount_percentage')}
-                        >
-                          Amount % {sortConfig.key === 'amount_percentage' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </th>
-                        <th 
-                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                          onClick={() => handleSort(breakdownType === 'abp' ? 'abp_target_quantity' : 'forecast_target_quantity')}
-                        >
-                          Target Qty {sortConfig.key === (breakdownType === 'abp' ? 'abp_target_quantity' : 'forecast_target_quantity') && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </th>
-                        <th 
-                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                          onClick={() => handleSort('achievement_quantity')}
-                        >
-                          Achievement Qty {sortConfig.key === 'achievement_quantity' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </th>
-                        <th 
-                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                          onClick={() => handleSort('quantity_percentage')}
-                        >
-                          Quantity % {sortConfig.key === 'quantity_percentage' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {getSortedBreakdownData().map((item, index) => {
-                        const dealerKey = `${item.dealer_code}-${item.year}-${item.month}`;
-                        const isExpanded = expandedDealer === dealerKey;
-                        const targetAmount = breakdownType === 'abp' ? (item.abp_target_amount || 0) : (item.forecast_target_amount || 0);
-                        const achievementAmount = item.achievement_amount || 0;
-                        const amountPercentage = item.amount_percentage || 0;
-                        const targetQuantity = breakdownType === 'abp' ? (item.abp_target_quantity || 0) : (item.forecast_target_quantity || 0);
-                        const achievementQuantity = item.achievement_quantity || 0;
-                        const quantityPercentage = item.quantity_percentage || 0;
-                        const details = dealerDetails[dealerKey];
-                        
-                        return (
-                          <React.Fragment key={index}>
-                            <tr 
-                              style={{ cursor: 'pointer' }}
-                              onClick={() => toggleDealerDetails(item.dealer_code, item.year, item.month)}
-                              className="dealer-row"
-                            >
-                              <td>
-                                {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                              </td>
-                              <td><strong>{item.dealer_code}</strong></td>
-                              <td>{item.dealer_name}</td>
-                              <td>{item.territory_name || 'N/A'}</td>
-                              <td>
-                                {targetAmount > 0 
-                                  ? formatCurrency(targetAmount) 
-                                  : <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>
-                                }
-                              </td>
-                              <td>
-                                {achievementAmount > 0 
-                                  ? formatCurrency(achievementAmount) 
-                                  : <span style={{ color: '#999', fontStyle: 'italic' }}>No sales</span>
-                                }
-                              </td>
-                              <td>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span className={amountPercentage >= 100 ? 'positive' : amountPercentage >= 80 ? 'warning' : 'negative'}>
-                                    {formatPercentage(amountPercentage)}
-                                  </span>
-                                  <div style={{ 
-                                    width: '60px', 
-                                    height: '8px', 
-                                    background: '#e5e7eb', 
-                                    borderRadius: '4px',
-                                    overflow: 'hidden'
-                                  }}>
-                                    <div style={{
-                                      width: `${Math.min(amountPercentage, 100)}%`,
-                                      height: '100%',
-                                      background: amountPercentage >= 100 ? '#10b981' : amountPercentage >= 80 ? '#f59e0b' : '#ef4444',
-                                      transition: 'width 0.3s'
-                                    }} />
-                                  </div>
-                                </div>
-                              </td>
-                              <td>
-                                {targetQuantity > 0 
-                                  ? targetQuantity.toLocaleString() 
-                                  : <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>
-                                }
-                              </td>
-                              <td>
-                                {achievementQuantity > 0 
-                                  ? achievementQuantity.toLocaleString() 
-                                  : <span style={{ color: '#999', fontStyle: 'italic' }}>No sales</span>
-                                }
-                              </td>
-                              <td>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span className={quantityPercentage >= 100 ? 'positive' : quantityPercentage >= 80 ? 'warning' : 'negative'}>
-                                    {formatPercentage(quantityPercentage)}
-                                  </span>
-                                  <div style={{ 
-                                    width: '60px', 
-                                    height: '8px', 
-                                    background: '#e5e7eb', 
-                                    borderRadius: '4px',
-                                    overflow: 'hidden'
-                                  }}>
-                                    <div style={{
-                                      width: `${Math.min(quantityPercentage, 100)}%`,
-                                      height: '100%',
-                                      background: quantityPercentage >= 100 ? '#10b981' : quantityPercentage >= 80 ? '#f59e0b' : '#ef4444',
-                                      transition: 'width 0.3s'
-                                    }} />
-                                  </div>
-                                </div>
-                              </td>
-                              <td>
-                                <span style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  fontWeight: '500',
-                                  background: (amountPercentage >= 100 && quantityPercentage >= 100) ? '#d1fae5' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '#fef3c7' : '#fee2e2',
-                                  color: (amountPercentage >= 100 && quantityPercentage >= 100) ? '#065f46' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '#92400e' : '#991b1b'
-                                }}>
-                                  {(amountPercentage >= 100 && quantityPercentage >= 100) ? '✓ On Target' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '⚠ Close' : '✗ Below Target'}
-                                </span>
-                              </td>
-                            </tr>
-                            {isExpanded && (
-                              <tr>
-                                <td colSpan="11" style={{ padding: '20px', background: '#f9fafb' }}>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                    {/* Summary Cards */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                                      <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Target Quantity</div>
-                                        <div style={{ fontSize: '18px', fontWeight: '600' }}>
-                                          {formatCurrency(breakdownType === 'abp' ? (item.abp_target_quantity || 0) : (item.forecast_target_quantity || 0))}
-                                        </div>
-                                      </div>
-                                      <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Achievement Quantity</div>
-                                        <div style={{ fontSize: '18px', fontWeight: '600' }}>
-                                          {formatCurrency(item.achievement_quantity || 0)}
-                                        </div>
-                                      </div>
-                                      <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Quantity %</div>
-                                        <div style={{ fontSize: '18px', fontWeight: '600', color: (item.quantity_percentage || 0) >= 100 ? '#10b981' : '#ef4444' }}>
-                                          {formatPercentage(item.quantity_percentage || 0)}
-                                        </div>
-                                      </div>
-                                      <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Amount %</div>
-                                        <div style={{ fontSize: '18px', fontWeight: '600', color: (item.amount_percentage || 0) >= 100 ? '#10b981' : '#ef4444' }}>
-                                          {formatPercentage(item.amount_percentage || 0)}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {/* Application Breakdown */}
-                                    {details && !details.error && (
-                                      <div>
-                                        <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: '600' }}>Application-wise Breakdown</h4>
-                                        {details.achievement && details.achievement.length > 0 ? (
-                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '8px' }}>
-                                            {details.achievement.map((app, idx) => (
-                                              <div key={idx} style={{ 
-                                                padding: '10px', 
-                                                background: 'white', 
-                                                borderRadius: '6px', 
-                                                border: '1px solid #e5e7eb',
-                                                fontSize: '13px'
-                                              }}>
-                                                <div style={{ fontWeight: '600', marginBottom: '4px' }}>{app.application_name || 'Unknown'}</div>
-                                                <div style={{ color: '#666', fontSize: '12px' }}>
-                                                  Qty: {formatCurrency(app.qty || 0)} | Amount: {formatCurrency(app.amount || 0)}
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        ) : (
-                                          <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '6px', color: '#92400e', fontSize: '13px' }}>
-                                            No application-level data available for this dealer.
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                    
-                                    {details && details.error && (
-                                      <div style={{ padding: '12px', background: '#fee2e2', borderRadius: '6px', color: '#991b1b', fontSize: '13px' }}>
-                                        {details.error}
-                                      </div>
-                                    )}
-                                    
-                                    {!details && (
-                                      <div style={{ padding: '12px', background: '#f3f4f6', borderRadius: '6px', color: '#666', fontSize: '13px', textAlign: 'center' }}>
-                                        Loading application details...
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => {
-                setShowBreakdownModal(false);
-                setBreakdownData([]);
-                setBreakdownType('');
-                setExpandedDealer(null);
-                setBreakdownSearchTerm('');
-                setSortConfig({ key: null, direction: 'asc' });
-              }}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
