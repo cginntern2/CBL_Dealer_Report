@@ -327,6 +327,24 @@ router.post('/upload', upload.single('file'), (req, res) => {
         'Status', 'STATUS', 'Active Status', 'ACTIVE STATUS'
       ]) || 'active';
       
+      // National Code & Name
+      const nat_code = findColumn(row, [
+        'NAT_CODE', 'NAT CODE', 'Nat_Code', 'NatCode', 'National Code', 'NATIONAL CODE'
+      ]) || '';
+      
+      const nat_name = findColumn(row, [
+        'NAT_NAME', 'NAT NAME', 'Nat_Name', 'NatName', 'National Name', 'NATIONAL NAME', 'National'
+      ]) || '';
+      
+      // Division Code & Name
+      const div_code = findColumn(row, [
+        'DIV_CODE', 'DIV CODE', 'Div_Code', 'DivCode', 'Division Code', 'DIVISION CODE'
+      ]) || '';
+      
+      const div_name = findColumn(row, [
+        'DIV_NAME', 'DIV NAME', 'Div_Name', 'DivName', 'Division Name', 'DIVISION NAME', 'Division'
+      ]) || '';
+      
       return {
         dealer_name,
         dealer_code,
@@ -336,6 +354,10 @@ router.post('/upload', upload.single('file'), (req, res) => {
         address,
         territory_name: territory_name.trim(),
         territory_code: territory_code.trim(),
+        nat_code: nat_code.trim(),
+        nat_name: nat_name.trim(),
+        div_code: div_code.trim(),
+        div_name: div_name.trim(),
         credit_days: isNaN(credit_days) ? 30 : credit_days,
         status: ['active', 'inactive', 'delinquent'].includes(status.toLowerCase()) ? status.toLowerCase() : 'active'
       };
@@ -411,7 +433,7 @@ router.post('/upload', upload.single('file'), (req, res) => {
           console.log(`✅ Mapped ${territoryResults.length} territories to IDs`);
           
           // Step 3: Insert dealers with territory_id
-          const insertQuery = `INSERT IGNORE INTO dealers (dealer_name, dealer_code, contact_person, email, phone, address, territory_id, credit_days, status) 
+          const insertQuery = `INSERT IGNORE INTO dealers (dealer_name, dealer_code, contact_person, email, phone, address, territory_id, nat_code, nat_name, div_code, div_name, credit_days, status) 
                                VALUES ?`;
           
           const values = validDealers.map(d => {
@@ -427,6 +449,10 @@ router.post('/upload', upload.single('file'), (req, res) => {
               d.phone || null,
               d.address || null,
               territoryId,
+              d.nat_code || null,
+              d.nat_name || null,
+              d.div_code || null,
+              d.div_name || null,
               d.credit_days,
               d.status
             ];
@@ -454,7 +480,7 @@ router.post('/upload', upload.single('file'), (req, res) => {
       });
     } else {
       // No territories found, insert dealers without territory_id
-      const insertQuery = `INSERT IGNORE INTO dealers (dealer_name, dealer_code, contact_person, email, phone, address, territory_id, credit_days, status) 
+      const insertQuery = `INSERT IGNORE INTO dealers (dealer_name, dealer_code, contact_person, email, phone, address, territory_id, nat_code, nat_name, div_code, div_name, credit_days, status) 
                            VALUES ?`;
       
       const values = validDealers.map(d => [
@@ -465,6 +491,10 @@ router.post('/upload', upload.single('file'), (req, res) => {
         d.phone || null,
         d.address || null,
         null, // no territory_id
+        d.nat_code || null,
+        d.nat_name || null,
+        d.div_code || null,
+        d.div_name || null,
         d.credit_days,
         d.status
       ]);

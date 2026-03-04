@@ -356,12 +356,20 @@ router.post('/abp/upload', upload.single('file'), (req, res) => {
       const expectedQtyCol = monthHeader.col + 5;
 
       // Capture the 5 application columns (col to col+4) with their headers
+      // These should be the application unit names (ET Reg, ET Premium, Rickshaw, IPS, Solar)
       for (let appCol = monthHeader.col; appCol < monthHeader.col + 5 && appCol < monthGroupEnd; appCol++) {
-        const appName = headerRow[appCol] ? String(headerRow[appCol]).trim() : '';
-        if (appName) {
-          appColumns.push({ name: appName, col: appCol });
+        const appNameRaw = headerRow[appCol];
+        const appName = appNameRaw ? String(appNameRaw).trim() : '';
+        // Only add if we have a valid name (skip empty headers)
+        if (appName && appName.length > 0) {
+          appColumns.push({ 
+            name: appName, 
+            col: appCol 
+          });
         }
       }
+      
+      console.log(`ABP Upload - ${monthHeader.monthName}: Found ${appColumns.length} application columns:`, appColumns.map(a => `${a.name} at col ${a.col}`));
       
       // First, try the expected Total QTY position (5 columns after month start)
       if (expectedQtyCol < monthGroupEnd) {
@@ -579,8 +587,16 @@ router.post('/abp/upload', upload.single('file'), (req, res) => {
         });
 
         // Per-application quantities
-        if (mapping.applications && Array.isArray(mapping.applications)) {
+        if (mapping.applications && Array.isArray(mapping.applications) && mapping.applications.length > 0) {
           mapping.applications.forEach(app => {
+            // Skip if application name is missing or empty
+            if (!app || !app.name || typeof app.name !== 'string' || app.name.trim() === '') {
+              if (i < 10) {
+                console.log(`ABP Upload - Row ${i + 1}: Skipping application column ${app?.col} - name is missing or empty`);
+              }
+              return;
+            }
+            
             let appQtyRaw;
             if (Array.isArray(row)) {
               appQtyRaw = row[app.col];
@@ -593,17 +609,27 @@ router.post('/abp/upload', upload.single('file'), (req, res) => {
             const appQty = (appQtyRaw === null || appQtyRaw === undefined || appQtyRaw === '' || appQtyRaw === ' ')
               ? 0
               : (parseFloat(appQtyRaw) || 0);
-            if (appQty > 0) {
+            
+            // Only store if application_unit name is valid (double-check)
+            const appUnitName = app.name.trim();
+            if (appUnitName && appUnitName.length > 0) {
               abpItems.push({
                 dealer_code: dealerCode,
                 year: mapping.year,
                 month: mapping.month,
-                application_name: app.name,
+                application_unit: appUnitName,
                 qty: appQty,
                 amount: 0 // not available in ABP
               });
+            } else {
+              console.warn(`ABP Upload - Row ${i + 1}: Application unit name is empty after trim for column ${app.col}`);
             }
           });
+        } else {
+          // Log if no applications found for this month
+          if (i < 10 && mapping.monthHeaderCol !== undefined) {
+            console.log(`ABP Upload - Row ${i + 1}: No application columns found for ${mapping.monthName}. appColumns length: ${mapping.applications?.length || 0}`);
+          }
         }
       });
     }
@@ -776,15 +802,32 @@ router.post('/abp/upload', upload.single('file'), (req, res) => {
             // No items to insert, return success response
             return respondSuccess();
           }
-          const itemValues = updatedItems.map(it => [
+          
+          // Filter out items with null/empty application_unit
+          const validItems = updatedItems.filter(it => 
+            it.application_unit && 
+            typeof it.application_unit === 'string' && 
+            it.application_unit.trim().length > 0
+          );
+          
+          if (validItems.length === 0) {
+            console.log('ABP Upload - No valid application unit items to insert (all had null/empty application_unit)');
+            return respondSuccess();
+          }
+          
+          if (validItems.length < updatedItems.length) {
+            console.warn(`ABP Upload - Filtered out ${updatedItems.length - validItems.length} items with null/empty application_unit`);
+          }
+          
+          const itemValues = validItems.map(it => [
             it.dealer_code,
             it.year,
             it.month,
-            it.application_name,
+            it.application_unit.trim(),
             it.qty,
             it.amount
           ]);
-          const itemQuery = `REPLACE INTO abp_target_items (dealer_code, year, month, application_name, qty, amount) VALUES ?`;
+          const itemQuery = `REPLACE INTO abp_target_items (dealer_code, year, month, application_unit, qty, amount) VALUES ?`;
           db.query(itemQuery, [itemValues], (itemErr) => {
             if (itemErr) {
               console.error('Error inserting ABP target items:', itemErr);
@@ -908,6 +951,28 @@ router.post('/forecast/upload', upload.single('file'), (req, res) => {
     // Find Quantity column (optional)
     const salesQtyIndex = findColumn(headers, ['sales qty', 'sales quantity', 'quantity', 'qty', 'total qty']);
     
+    // Identify application unit columns (ET Reg, ET Premium, Rickshaw, IPS, Solar)
+    // These should be before Total QTY and Sales Value
+    const applicationUnitColumns = [];
+    const applicationUnitNames = ['et reg', 'et premium', 'et premiun', 'rickshaw', 'ips', 'solar'];
+    
+    headers.forEach((header, index) => {
+      if (!header) return;
+      const headerLower = String(header).trim().toLowerCase();
+      // Check if this header matches any application unit name
+      const matchedUnit = applicationUnitNames.find(unitName => 
+        headerLower === unitName || headerLower.includes(unitName) || unitName.includes(headerLower)
+      );
+      if (matchedUnit && index !== salesValueIndex && index !== salesQtyIndex) {
+        applicationUnitColumns.push({
+          name: String(header).trim(),
+          col: index
+        });
+      }
+    });
+    
+    console.log('Forecast Upload - Found application unit columns:', applicationUnitColumns.map(a => `${a.name} at col ${a.col}`));
+    
     if (salesValueIndex === -1) {
       return res.status(400).json({ 
         error: 'Sales Value column not found. Expected column header: "Sales Value"',
@@ -927,6 +992,7 @@ router.post('/forecast/upload', upload.single('file'), (req, res) => {
     console.log('Forecast Upload - Using ERP ID column at index:', dealerCodeIndex, 'Header:', headers[dealerCodeIndex]);
     
     const targets = [];
+    const forecastItems = []; // per-application unit items
     const errors = [];
     const dealerCodesFound = new Set();
     const dealerCodesWithTargets = new Set();
@@ -959,6 +1025,24 @@ router.post('/forecast/upload', upload.single('file'), (req, res) => {
           forecast_quantity: forecastQty
         });
       }
+      
+      // Parse application unit quantities
+      applicationUnitColumns.forEach(appUnit => {
+        const appQtyRaw = row[appUnit.col];
+        const appQty = (appQtyRaw === null || appQtyRaw === undefined || appQtyRaw === '' || appQtyRaw === ' ' || appQtyRaw === '-')
+          ? 0
+          : (parseFloat(appQtyRaw) || 0);
+        
+        // Store all application units, even if qty is 0
+        forecastItems.push({
+          dealer_code: dealerCode,
+          year: year,
+          month: month,
+          application_unit: appUnit.name,
+          qty: appQty,
+          amount: 0 // Amount not available per unit in Forecast format
+        });
+      });
     }
     
     if (targets.length === 0) {
@@ -1049,8 +1133,49 @@ router.post('/forecast/upload', upload.single('file'), (req, res) => {
           return res.status(500).json({ error: 'Failed to upload Forecast targets', details: err.message });
         }
         
-        // Sync comparison tables
-        syncComparisonTables(() => {
+        // Insert per-application unit items
+        const insertItems = () => {
+          if (forecastItems.length === 0) {
+            return syncComparisonTables(() => respondSuccess());
+          }
+          
+          // Filter items to only include valid dealer codes
+          const updatedItems = forecastItems
+            .filter(item => dealerCodeMap[item.dealer_code])
+            .map(item => ({
+              ...item,
+              dealer_code: dealerCodeMap[item.dealer_code]
+            }));
+          
+          const itemValues = updatedItems.map(it => [
+            it.dealer_code,
+            it.year,
+            it.month,
+            it.application_unit,
+            it.qty,
+            it.amount
+          ]);
+          
+          const itemQuery = `REPLACE INTO forecast_target_items (dealer_code, year, month, application_unit, qty, amount) VALUES ?`;
+          db.query(itemQuery, [itemValues], (itemErr) => {
+            if (itemErr) {
+              console.error('Error inserting Forecast target items:', itemErr);
+              // Check if table doesn't exist
+              if (itemErr.code === 'ER_NO_SUCH_TABLE') {
+                return res.status(500).json({ 
+                  error: 'Failed to upload Forecast target items', 
+                  details: itemErr.message,
+                  suggestion: 'The forecast_target_items table does not exist. Please run: node server/migrate-application-units.js'
+                });
+              }
+              // Continue even if items fail - main targets are saved
+              console.warn('Warning: Failed to save application unit items, but main targets were saved');
+            }
+            return syncComparisonTables(() => respondSuccess());
+          });
+        };
+        
+        const respondSuccess = () => {
           const response = {
             success: true,
             message: `Successfully uploaded ${updatedTargets.length} Forecast targets for ${monthInfo.trim()}`,
@@ -1065,6 +1190,7 @@ router.post('/forecast/upload', upload.single('file'), (req, res) => {
               codes: Array.from(dealerCodesWithTargets).map(code => dealerCodeMap[code])
             },
             totalTarget: updatedTargets.reduce((sum, t) => sum + t.target_amount, 0),
+            applicationUnits: applicationUnitColumns.length,
             sample: updatedTargets.slice(0, 5)
           };
           
@@ -1077,7 +1203,10 @@ router.post('/forecast/upload', upload.single('file'), (req, res) => {
           }
           
           res.json(response);
-        });
+        };
+        
+        // Insert items
+        insertItems();
       });
     });
     
@@ -1089,21 +1218,67 @@ router.post('/forecast/upload', upload.single('file'), (req, res) => {
 
 // Helper function to convert Excel serial date to JavaScript date
 const excelDateToJSDate = (excelDate) => {
-  if (!excelDate) return null;
-  
-  // If it's already a date object or string, try to parse it
-  if (typeof excelDate === 'string') {
-    const parsed = new Date(excelDate);
-    if (!isNaN(parsed.getTime())) return parsed;
-  }
+  if (!excelDate && excelDate !== 0) return null;
   
   // If it's a number (Excel serial date), convert it
   if (typeof excelDate === 'number') {
-    // Excel serial date: days since January 1, 1900
-    // JavaScript Date: milliseconds since January 1, 1970
+    // Excel serial date: days since December 30, 1899
+    // Note: Excel incorrectly treats 1900 as a leap year, but we use standard conversion
     const excelEpoch = new Date(1899, 11, 30); // December 30, 1899
     const jsDate = new Date(excelEpoch.getTime() + excelDate * 24 * 60 * 60 * 1000);
     return jsDate;
+  }
+  
+  // If it's a string, try multiple parsing methods
+  if (typeof excelDate === 'string') {
+    const trimmed = excelDate.trim();
+    if (!trimmed) return null;
+    
+    // Try 1: Direct Date parsing (works for ISO format: "2024-01-15")
+    let parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) {
+      return parsed;
+    }
+    
+    // Try 2: Common formats like "DD/MM/YYYY", "DD-MM-YYYY", "MM/DD/YYYY"
+    const dateFormats = [
+      /(\d{1,2})\/(\d{1,2})\/(\d{4})/,  // DD/MM/YYYY or MM/DD/YYYY
+      /(\d{1,2})-(\d{1,2})-(\d{4})/,    // DD-MM-YYYY or MM-DD-YYYY
+      /(\d{4})-(\d{1,2})-(\d{1,2})/,    // YYYY-MM-DD
+      /(\d{1,2})\s+(\w{3,9})\s+(\d{4})/i // DD MMM YYYY or DD MMMM YYYY
+    ];
+    
+    for (const format of dateFormats) {
+      const match = trimmed.match(format);
+      if (match) {
+        let year, month, day;
+        
+        if (format === dateFormats[3]) {
+          // DD MMM YYYY format
+          const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+          day = parseInt(match[1]);
+          const monthName = match[2].toLowerCase().substring(0, 3);
+          month = monthNames.indexOf(monthName);
+          year = parseInt(match[3]);
+          if (month === -1) continue;
+        } else if (format === dateFormats[2]) {
+          // YYYY-MM-DD format
+          year = parseInt(match[1]);
+          month = parseInt(match[2]) - 1;
+          day = parseInt(match[3]);
+        } else {
+          // DD/MM/YYYY or MM/DD/YYYY - assume DD/MM/YYYY (more common)
+          day = parseInt(match[1]);
+          month = parseInt(match[2]) - 1;
+          year = parseInt(match[3]);
+        }
+        
+        parsed = new Date(year, month, day);
+        if (!isNaN(parsed.getTime())) {
+          return parsed;
+        }
+      }
+    }
   }
   
   return null;
@@ -1161,6 +1336,8 @@ router.post('/achievements/upload', upload.single('file'), (req, res) => {
     // Find dealer code column - could be "Dealer Code" or "ERP ID"
     let dealerCodeIndex = findColumn(headerRow, ['dealer code', 'dealer_code', 'dealerco', 'erp id', 'erp_id', 'erpid', 'code', 'dealer']);
     const orderDateIndex = findColumn(headerRow, ['order date', 'order_date', 'date', 'invoice date', 'orderdate']);
+    // Find Application Unit column
+    const applicationUnitIndex = findColumn(headerRow, ['application unit', 'application_unit', 'application', 'unit', 'app unit']);
     // Note: File has typo "Qunatity" instead of "Quantity"
     const quantityIndex = findColumnWithActual(headerRow, ['actual invoice qunatity', 'actual invoice quantity', 'actual_invoice_qunatity', 'actual_invoice_quantity']);
     const amountIndex = findColumnWithActual(headerRow, ['actual invoice amount', 'actual_invoice_amount']);
@@ -1198,10 +1375,16 @@ router.post('/achievements/upload', upload.single('file'), (req, res) => {
     if (quantityIndex !== -1) {
       console.log('  Actual Invoice Quantity:', quantityIndex, headerRow[quantityIndex]);
     }
+    if (applicationUnitIndex !== -1) {
+      console.log('  Application Unit:', applicationUnitIndex, headerRow[applicationUnitIndex]);
+    } else {
+      console.log('  Application Unit: NOT FOUND - will aggregate without unit breakdown');
+    }
     
     // Process data rows starting from row 9 (index 8)
-    // Aggregate achievements by dealer, year, and month
-    const achievementMap = {}; // Key: dealer_code-year-month
+    // Aggregate achievements by dealer, year, month, and application unit
+    const achievementMap = {}; // Key: dealer_code-year-month (for main achievements table)
+    const achievementItemsMap = {}; // Key: dealer_code-year-month-application_unit (for items table)
     const dealerCodesFound = new Set();
     let totalRowsProcessed = 0;
     let rowsWithData = 0;
@@ -1234,6 +1417,16 @@ router.post('/achievements/upload', upload.single('file'), (req, res) => {
       const year = orderDate.getFullYear();
       const month = orderDate.getMonth() + 1; // JavaScript months are 0-indexed
       
+      // Get application unit (if available)
+      let applicationUnit = 'Total'; // Default if not found
+      if (applicationUnitIndex !== -1) {
+        const appUnitRaw = row[applicationUnitIndex];
+        if (appUnitRaw) {
+          applicationUnit = String(appUnitRaw).trim();
+          if (!applicationUnit) applicationUnit = 'Total';
+        }
+      }
+      
       // Get achievement amount (Actual Invoice Amount)
       const achievementAmount = parseFloat(row[amountIndex]) || 0;
       
@@ -1244,7 +1437,7 @@ router.post('/achievements/upload', upload.single('file'), (req, res) => {
       
       rowsWithData++;
       
-      // Aggregate by dealer-year-month
+      // Aggregate by dealer-year-month (for main achievements table)
       const key = `${dealerCode}-${year}-${month}`;
       if (!achievementMap[key]) {
         achievementMap[key] = {
@@ -1257,9 +1450,25 @@ router.post('/achievements/upload', upload.single('file'), (req, res) => {
       }
       achievementMap[key].achievement_amount += achievementAmount;
       achievementMap[key].achievement_quantity += achievementQuantity;
+      
+      // Aggregate by dealer-year-month-application_unit (for items table)
+      const itemKey = `${dealerCode}-${year}-${month}-${applicationUnit}`;
+      if (!achievementItemsMap[itemKey]) {
+        achievementItemsMap[itemKey] = {
+          dealer_code: dealerCode,
+          year: year,
+          month: month,
+          application_unit: applicationUnit,
+          qty: 0,
+          amount: 0
+        };
+      }
+      achievementItemsMap[itemKey].qty += achievementQuantity;
+      achievementItemsMap[itemKey].amount += achievementAmount;
     }
     
     const achievements = Object.values(achievementMap);
+    const achievementItems = Object.values(achievementItemsMap);
     
     if (achievements.length === 0) {
       return res.status(400).json({ 
@@ -1272,6 +1481,7 @@ router.post('/achievements/upload', upload.single('file'), (req, res) => {
     }
     
     console.log(`Processing ${achievements.length} aggregated achievements from ${rowsWithData} invoice rows...`);
+    console.log(`Processing ${achievementItems.length} application unit items...`);
     
     // Verify that all dealer codes exist in the database
     db.query('SELECT dealer_code FROM dealers', (verifyErr, allDealers) => {
@@ -1326,8 +1536,49 @@ router.post('/achievements/upload', upload.single('file'), (req, res) => {
           return res.status(500).json({ error: 'Failed to upload achievements', details: err.message });
         }
         
-        // Sync comparison tables
-        syncComparisonTables(() => {
+        // Insert per-application unit items
+        const insertItems = () => {
+          if (achievementItems.length === 0) {
+            return syncComparisonTables(() => respondSuccess());
+          }
+          
+          // Filter items to only include valid dealer codes
+          const updatedItems = achievementItems
+            .filter(item => dealerCodeMap[item.dealer_code])
+            .map(item => ({
+              ...item,
+              dealer_code: dealerCodeMap[item.dealer_code]
+            }));
+          
+          const itemValues = updatedItems.map(it => [
+            it.dealer_code,
+            it.year,
+            it.month,
+            it.application_unit,
+            it.qty,
+            it.amount
+          ]);
+          
+          const itemQuery = `REPLACE INTO achievement_items (dealer_code, year, month, application_unit, qty, amount) VALUES ?`;
+          db.query(itemQuery, [itemValues], (itemErr) => {
+            if (itemErr) {
+              console.error('Error inserting Achievement items:', itemErr);
+              // Check if table doesn't exist
+              if (itemErr.code === 'ER_NO_SUCH_TABLE') {
+                return res.status(500).json({ 
+                  error: 'Failed to upload Achievement items', 
+                  details: itemErr.message,
+                  suggestion: 'The achievement_items table does not exist. Please run: node server/migrate-application-units.js'
+                });
+              }
+              // Continue even if items fail - main achievements are saved
+              console.warn('Warning: Failed to save application unit items, but main achievements were saved');
+            }
+            return syncComparisonTables(() => respondSuccess());
+          });
+        };
+        
+        const respondSuccess = () => {
           // Create summary by month
           const monthSummary = {};
           validAchievements.forEach(a => {
@@ -1355,6 +1606,7 @@ router.post('/achievements/upload', upload.single('file'), (req, res) => {
               total: Object.keys(monthSummary).length,
               summary: monthSummary
             },
+            applicationUnits: applicationUnitIndex !== -1 ? 'Grouped by Application Unit' : 'Not available',
             sample: validAchievements.slice(0, 5)
           };
           
@@ -1367,7 +1619,10 @@ router.post('/achievements/upload', upload.single('file'), (req, res) => {
           }
           
           res.json(response);
-        });
+        };
+        
+        // Insert items
+        insertItems();
       });
     });
     
@@ -1403,25 +1658,50 @@ router.get('/report', (req, res) => {
   }
   
   // Build JOIN conditions for year/month filters
-  let abpJoinCondition = 'd.dealer_code = abp.dealer_code';
-  let fcJoinCondition = 'd.dealer_code = fc.dealer_code';
+  // Use comparison tables first, fall back to raw tables if comparison tables don't have data
+  let abpCompJoinCondition = 'd.dealer_code = abp_comp.dealer_code';
+  let fcCompJoinCondition = 'd.dealer_code = fc_comp.dealer_code';
+  let abpRawJoinCondition = 'd.dealer_code = abp_raw.dealer_code';
+  let fcRawJoinCondition = 'd.dealer_code = fc_raw.dealer_code';
   let achJoinCondition = 'd.dealer_code = ach.dealer_code';
-  const joinParams = [];
+  
+  // Build join params for each table in the order they appear in the JOIN clauses
+  // Order: abp_comp, fc_comp, abp_raw, fc_raw, ach
+  // For each: year (if set), then month (if set)
+  const abpCompParams = [];
+  const fcCompParams = [];
+  const abpRawParams = [];
+  const fcRawParams = [];
+  const achParams = [];
   
   if (year) {
-    abpJoinCondition += ' AND abp.year = ?';
-    fcJoinCondition += ' AND fc.year = ?';
+    abpCompJoinCondition += ' AND abp_comp.year = ?';
+    fcCompJoinCondition += ' AND fc_comp.year = ?';
+    abpRawJoinCondition += ' AND abp_raw.year = ?';
+    fcRawJoinCondition += ' AND fc_raw.year = ?';
     achJoinCondition += ' AND ach.year = ?';
-    joinParams.push(parseInt(year), parseInt(year), parseInt(year));
+    abpCompParams.push(parseInt(year));
+    fcCompParams.push(parseInt(year));
+    abpRawParams.push(parseInt(year));
+    fcRawParams.push(parseInt(year));
+    achParams.push(parseInt(year));
   }
   
   if (month) {
-    abpJoinCondition += ' AND abp.month = ?';
-    fcJoinCondition += ' AND fc.month = ?';
+    abpCompJoinCondition += ' AND abp_comp.month = ?';
+    fcCompJoinCondition += ' AND fc_comp.month = ?';
+    abpRawJoinCondition += ' AND abp_raw.month = ?';
+    fcRawJoinCondition += ' AND fc_raw.month = ?';
     achJoinCondition += ' AND ach.month = ?';
-    joinParams.push(parseInt(month), parseInt(month), parseInt(month));
+    abpCompParams.push(parseInt(month));
+    fcCompParams.push(parseInt(month));
+    abpRawParams.push(parseInt(month));
+    fcRawParams.push(parseInt(month));
+    achParams.push(parseInt(month));
   }
   
+  // Params must be in the order the JOINs appear in the query
+  const joinParams = [...abpCompParams, ...fcCompParams, ...abpRawParams, ...fcRawParams, ...achParams];
   const finalParams = [...joinParams, ...queryParams];
   
   // When year/month filters are applied, show all dealers (even with 0s)
@@ -1429,50 +1709,64 @@ router.get('/report', (req, res) => {
   const hasDateFilter = year || month;
   const dataFilterClause = hasDateFilter 
     ? '' // Show all dealers when filtering by date
-    : 'AND (abp.id IS NOT NULL OR fc.id IS NOT NULL OR ach.id IS NOT NULL)'; // Only show dealers with data when no date filter
+    : 'AND (abp_comp.id IS NOT NULL OR fc_comp.id IS NOT NULL OR abp_raw.id IS NOT NULL OR fc_raw.id IS NOT NULL OR ach.id IS NOT NULL)'; // Only show dealers with data when no date filter
   
-  // Main query - get all dealers with their targets and achievements
+  // Main query - prefer comparison tables, fall back to raw tables if comparison tables don't have data
+  // Use percentages from comparison tables when available
   let query = `
     SELECT 
       d.dealer_code,
       d.dealer_name,
       t.territory_name,
-      COALESCE(fc.year, abp.year, ach.year${year ? `, ${parseInt(year)}` : ''}) as year,
-      COALESCE(fc.month, abp.month, ach.month${month ? `, ${parseInt(month)}` : ''}) as month,
-      COALESCE(abp.target_amount, 0) as abp_target,
-      COALESCE(abp.abp_quantity, 0) as abp_quantity,
-      COALESCE(fc.target_amount, 0) as forecast_target,
-      COALESCE(fc.forecast_quantity, 0) as forecast_quantity,
-      COALESCE(ach.achievement_amount, 0) as achievement,
-      COALESCE(ach.achievement_quantity, 0) as achievement_quantity,
+      COALESCE(fc_comp.year, fc_raw.year, abp_comp.year, abp_raw.year, ach.year${year ? `, ${parseInt(year)}` : ''}) as year,
+      COALESCE(fc_comp.month, fc_raw.month, abp_comp.month, abp_raw.month, ach.month${month ? `, ${parseInt(month)}` : ''}) as month,
+      -- ABP Target: Prefer from comparison table, fall back to raw table
+      COALESCE(abp_comp.abp_target_amount, abp_raw.target_amount, 0) as abp_target,
+      COALESCE(abp_comp.abp_target_quantity, abp_raw.abp_quantity, 0) as abp_quantity,
+      -- Forecast Target: Prefer from comparison table, fall back to raw table
+      COALESCE(fc_comp.forecast_target_amount, fc_raw.target_amount, 0) as forecast_target,
+      COALESCE(fc_comp.forecast_target_quantity, fc_raw.forecast_quantity, 0) as forecast_quantity,
+      -- Debug: Check if forecast data exists
+      CASE WHEN fc_comp.id IS NOT NULL OR fc_raw.id IS NOT NULL THEN 1 ELSE 0 END as has_forecast_data,
+      -- Achievement: Prefer from comparison tables, fall back to raw achievements table
+      COALESCE(fc_comp.achievement_amount, abp_comp.achievement_amount, ach.achievement_amount, 0) as achievement,
+      COALESCE(fc_comp.achievement_quantity, abp_comp.achievement_quantity, ach.achievement_quantity, 0) as achievement_quantity,
       -- Effective Target: Forecast overrides ABP (if Forecast exists, use it; otherwise use ABP)
       CASE 
-        WHEN fc.target_amount IS NOT NULL THEN fc.target_amount
-        ELSE COALESCE(abp.target_amount, 0)
+        WHEN COALESCE(fc_comp.forecast_target_amount, fc_raw.target_amount, 0) > 0 THEN 
+          COALESCE(fc_comp.forecast_target_amount, fc_raw.target_amount, 0)
+        ELSE COALESCE(abp_comp.abp_target_amount, abp_raw.target_amount, 0)
       END as effective_target,
-      -- Achievement Percentage: (Achievement / Effective Target) * 100
-      -- Note: Achievements are aggregated totals (no category breakdown like ET, IPS, etc.)
-      -- The percentage is calculated against the month's effective target (Forecast or ABP)
+      -- Achievement Percentage: Use pre-calculated percentage from comparison tables when available
+      -- Otherwise calculate on the fly from raw tables
       CASE 
-        WHEN fc.target_amount IS NOT NULL AND fc.target_amount > 0 THEN 
-          ((COALESCE(ach.achievement_amount, 0) / fc.target_amount) * 100)
-        WHEN abp.target_amount IS NOT NULL AND abp.target_amount > 0 THEN 
-          ((COALESCE(ach.achievement_amount, 0) / abp.target_amount) * 100)
+        WHEN fc_comp.forecast_target_amount IS NOT NULL AND fc_comp.forecast_target_amount > 0 THEN 
+          COALESCE(fc_comp.amount_percentage, 0)
+        WHEN fc_raw.target_amount IS NOT NULL AND fc_raw.target_amount > 0 THEN 
+          ((COALESCE(ach.achievement_amount, 0) / fc_raw.target_amount) * 100)
+        WHEN abp_comp.abp_target_amount IS NOT NULL AND abp_comp.abp_target_amount > 0 THEN 
+          COALESCE(abp_comp.amount_percentage, 0)
+        WHEN abp_raw.target_amount IS NOT NULL AND abp_raw.target_amount > 0 THEN 
+          ((COALESCE(ach.achievement_amount, 0) / abp_raw.target_amount) * 100)
         ELSE 0
       END as achievement_percentage,
-      (COALESCE(ach.achievement_amount, 0) - 
+      -- Variance: Achievement - Effective Target
+      (COALESCE(fc_comp.achievement_amount, abp_comp.achievement_amount, ach.achievement_amount, 0) - 
        CASE 
-         WHEN fc.target_amount IS NOT NULL THEN fc.target_amount
-         ELSE COALESCE(abp.target_amount, 0)
+         WHEN COALESCE(fc_comp.forecast_target_amount, fc_raw.target_amount, 0) > 0 THEN 
+           COALESCE(fc_comp.forecast_target_amount, fc_raw.target_amount, 0)
+         ELSE COALESCE(abp_comp.abp_target_amount, abp_raw.target_amount, 0)
        END) as variance
     FROM dealers d
     LEFT JOIN territories t ON d.territory_id = t.id
-    LEFT JOIN abp_targets abp ON ${abpJoinCondition}
-    LEFT JOIN forecast_targets fc ON ${fcJoinCondition}
+    LEFT JOIN abp_vs_achievement abp_comp ON ${abpCompJoinCondition}
+    LEFT JOIN forecast_vs_achievement fc_comp ON ${fcCompJoinCondition}
+    LEFT JOIN abp_targets abp_raw ON ${abpRawJoinCondition}
+    LEFT JOIN forecast_targets fc_raw ON ${fcRawJoinCondition}
     LEFT JOIN achievements ach ON ${achJoinCondition}
     ${whereClause}
     ${dataFilterClause}
-    ORDER BY d.dealer_name ASC, COALESCE(fc.year, abp.year, ach.year) DESC, COALESCE(fc.month, abp.month, ach.month) DESC
+    ORDER BY d.dealer_name ASC, COALESCE(fc_comp.year, fc_raw.year, abp_comp.year, abp_raw.year, ach.year) DESC, COALESCE(fc_comp.month, fc_raw.month, abp_comp.month, abp_raw.month, ach.month) DESC
   `;
   
   // Get total count - simplified
@@ -1480,8 +1774,10 @@ router.get('/report', (req, res) => {
     SELECT COUNT(DISTINCT d.dealer_code) as total
     FROM dealers d
     LEFT JOIN territories t ON d.territory_id = t.id
-    LEFT JOIN abp_targets abp ON ${abpJoinCondition}
-    LEFT JOIN forecast_targets fc ON ${fcJoinCondition}
+    LEFT JOIN abp_vs_achievement abp_comp ON ${abpCompJoinCondition}
+    LEFT JOIN forecast_vs_achievement fc_comp ON ${fcCompJoinCondition}
+    LEFT JOIN abp_targets abp_raw ON ${abpRawJoinCondition}
+    LEFT JOIN forecast_targets fc_raw ON ${fcRawJoinCondition}
     LEFT JOIN achievements ach ON ${achJoinCondition}
     ${whereClause}
     ${dataFilterClause}
@@ -1489,7 +1785,10 @@ router.get('/report', (req, res) => {
   
   console.log('=== TARGET REPORT QUERY DEBUG ===');
   console.log('Query params:', { dealer_code, year, month, territory, showAll: showAllFlag, limit, page });
-  console.log('Join conditions:', { abpJoinCondition, fcJoinCondition, achJoinCondition });
+  console.log('Join conditions:', { abpCompJoinCondition, fcCompJoinCondition, abpRawJoinCondition, fcRawJoinCondition });
+  console.log('Using comparison tables (preferred) and raw tables (fallback):');
+  console.log('  - Comparison: abp_vs_achievement, forecast_vs_achievement');
+  console.log('  - Raw: abp_targets, forecast_targets, achievements');
   console.log('Final params:', finalParams);
   console.log('Query:', query.substring(0, 200) + '...');
   
@@ -1520,6 +1819,29 @@ router.get('/report', (req, res) => {
       }
       
       console.log('Query successful, returned', results.length, 'rows');
+      
+      // Debug: Check forecast data in results
+      if (month) {
+        const forecastRows = results.filter(r => parseFloat(r.forecast_target) > 0);
+        console.log(`Forecast data check for month ${month}: ${forecastRows.length} rows with forecast_target > 0`);
+        if (forecastRows.length > 0) {
+          console.log('Sample forecast rows:', forecastRows.slice(0, 3).map(r => ({
+            dealer_code: r.dealer_code,
+            forecast_target: r.forecast_target,
+            forecast_quantity: r.forecast_quantity,
+            has_forecast_data: r.has_forecast_data
+          })));
+        } else {
+          console.log('WARNING: No rows with forecast_target > 0 found!');
+          console.log('Sample rows (first 3):', results.slice(0, 3).map(r => ({
+            dealer_code: r.dealer_code,
+            forecast_target: r.forecast_target,
+            forecast_quantity: r.forecast_quantity,
+            has_forecast_data: r.has_forecast_data
+          })));
+        }
+      }
+      
       res.json({
         success: true,
         data: results,
@@ -1571,7 +1893,7 @@ router.get('/items', (req, res) => {
       
       // ABP items
       db.query(
-        `SELECT application_name, qty, amount FROM abp_target_items 
+        `SELECT application_unit as application_name, qty, amount FROM abp_target_items 
          WHERE dealer_code = ? AND year = ? AND month = ? 
          ORDER BY application_name`,
         [normalizedCode, queryYear, queryMonth],
@@ -1584,7 +1906,7 @@ router.get('/items', (req, res) => {
           
           // Forecast items
           db.query(
-            `SELECT application_name, qty, amount FROM forecast_target_items 
+            `SELECT application_unit as application_name, qty, amount FROM forecast_target_items 
              WHERE dealer_code = ? AND year = ? AND month = ? 
              ORDER BY application_name`,
             [normalizedCode, queryYear, queryMonth],
@@ -1597,7 +1919,7 @@ router.get('/items', (req, res) => {
               
               // Achievement items
               db.query(
-                `SELECT application_name, qty, amount FROM achievement_items 
+                `SELECT application_unit as application_name, qty, amount FROM achievement_items 
                  WHERE dealer_code = ? AND year = ? AND month = ? 
                  ORDER BY application_name`,
                 [normalizedCode, queryYear, queryMonth],
@@ -1621,10 +1943,10 @@ router.get('/items', (req, res) => {
       return;
   }
   
-  const query = `SELECT application_name, ${qtyColumn} as qty, ${amountColumn} as amount 
+  const query = `SELECT application_unit as application_name, ${qtyColumn} as qty, ${amountColumn} as amount 
                  FROM ${tableName} 
                  WHERE dealer_code = ? AND year = ? AND month = ? 
-                 ORDER BY application_name`;
+                 ORDER BY application_unit`;
   
   db.query(query, [normalizedCode, queryYear, queryMonth], (err, results) => {
     if (err) {
@@ -1635,6 +1957,193 @@ router.get('/items', (req, res) => {
     res.json({
       success: true,
       data: results || []
+    });
+  });
+});
+
+// Get available application units
+router.get('/application-units', (req, res) => {
+  const { comparison_type } = req.query;
+  const targetTable = comparison_type === 'abp' ? 'abp_target_items' : (comparison_type === 'forecast' ? 'forecast_target_items' : null);
+  
+  if (!targetTable) {
+    // Get from both tables
+    db.query(
+      `SELECT DISTINCT application_unit FROM abp_target_items WHERE application_unit IS NOT NULL AND application_unit != ''
+       UNION
+       SELECT DISTINCT application_unit FROM forecast_target_items WHERE application_unit IS NOT NULL AND application_unit != ''
+       UNION
+       SELECT DISTINCT application_unit FROM achievement_items WHERE application_unit IS NOT NULL AND application_unit != ''
+       ORDER BY application_unit`,
+      (err, results) => {
+        if (err) {
+          console.error('Error fetching application units:', err);
+          return res.status(500).json({ error: 'Failed to fetch application units', details: err.message });
+        }
+        res.json({
+          success: true,
+          units: results.map(r => r.application_unit).filter(u => u)
+        });
+      }
+    );
+  } else {
+    db.query(
+      `SELECT DISTINCT application_unit FROM ${targetTable} 
+       WHERE application_unit IS NOT NULL AND application_unit != ''
+       UNION
+       SELECT DISTINCT application_unit FROM achievement_items 
+       WHERE application_unit IS NOT NULL AND application_unit != ''
+       ORDER BY application_unit`,
+      (err, results) => {
+        if (err) {
+          console.error('Error fetching application units:', err);
+          return res.status(500).json({ error: 'Failed to fetch application units', details: err.message });
+        }
+        res.json({
+          success: true,
+          units: results.map(r => r.application_unit).filter(u => u)
+        });
+      }
+    );
+  }
+});
+
+// Get Application Unit Details - unit-wise breakdown
+router.get('/unit-details', (req, res) => {
+  const { year, month, territory, application_unit, comparison_type } = req.query;
+  // comparison_type: 'abp' or 'forecast'
+  
+  if (!comparison_type || !['abp', 'forecast'].includes(comparison_type)) {
+    return res.status(400).json({ error: 'comparison_type is required and must be "abp" or "forecast"' });
+  }
+  
+  let whereClause = 'WHERE 1=1';
+  const queryParams = [];
+  
+  // Build territory filter
+  if (territory && territory !== 'all') {
+    whereClause += ' AND d.dealer_code IN (SELECT dealer_code FROM dealers WHERE territory_id = ?)';
+    queryParams.push(parseInt(territory));
+  }
+  
+  // Build year/month filters
+  if (year && year !== 'all') {
+    whereClause += ' AND COALESCE(tgt.year, ach.year) = ?';
+    queryParams.push(parseInt(year));
+  }
+  
+  if (month && month !== 'all') {
+    whereClause += ' AND COALESCE(tgt.month, ach.month) = ?';
+    queryParams.push(parseInt(month));
+  }
+  
+  // Build application unit filter
+  if (application_unit && application_unit !== 'all') {
+    whereClause += ' AND COALESCE(tgt.application_unit, ach.application_unit) = ?';
+    queryParams.push(application_unit);
+  }
+  
+  const targetTable = comparison_type === 'abp' ? 'abp_target_items' : 'forecast_target_items';
+  
+  // Build JOIN conditions for target table
+  let tgtJoinCondition = 'd.dealer_code = tgt.dealer_code';
+  const tgtJoinParams = [];
+  
+  if (year && year !== 'all') {
+    tgtJoinCondition += ' AND tgt.year = ?';
+    tgtJoinParams.push(parseInt(year));
+  }
+  if (month && month !== 'all') {
+    tgtJoinCondition += ' AND tgt.month = ?';
+    tgtJoinParams.push(parseInt(month));
+  }
+  if (application_unit && application_unit !== 'all') {
+    tgtJoinCondition += ' AND tgt.application_unit = ?';
+    tgtJoinParams.push(application_unit);
+  }
+  
+  // Query to get unit-wise data with dealer breakdown
+  const query = `
+    SELECT 
+      d.dealer_code,
+      d.dealer_name,
+      COALESCE(t.territory_name, 'N/A') as territory_name,
+      COALESCE(tgt.year, ach.year) as year,
+      COALESCE(tgt.month, ach.month) as month,
+      COALESCE(tgt.application_unit, ach.application_unit, 'Total') as application_unit,
+      COALESCE(tgt.qty, 0) as target_qty,
+      COALESCE(tgt.amount, 0) as target_amount,
+      COALESCE(ach.qty, 0) as achievement_qty,
+      COALESCE(ach.amount, 0) as achievement_amount,
+      (COALESCE(ach.qty, 0) - COALESCE(tgt.qty, 0)) as qty_gap,
+      (COALESCE(ach.amount, 0) - COALESCE(tgt.amount, 0)) as amount_gap,
+      CASE 
+        WHEN COALESCE(tgt.qty, 0) > 0 THEN (COALESCE(ach.qty, 0) / tgt.qty) * 100
+        ELSE 0
+      END as qty_percentage,
+      CASE 
+        WHEN COALESCE(tgt.amount, 0) > 0 THEN (COALESCE(ach.amount, 0) / tgt.amount) * 100
+        ELSE 0
+      END as amount_percentage
+    FROM dealers d
+    LEFT JOIN territories t ON d.territory_id = t.id
+    LEFT JOIN ${targetTable} tgt ON ${tgtJoinCondition}
+    LEFT JOIN achievement_items ach ON d.dealer_code = ach.dealer_code
+      AND COALESCE(tgt.year, ach.year) = ach.year
+      AND COALESCE(tgt.month, ach.month) = ach.month
+      AND COALESCE(tgt.application_unit, ach.application_unit) = ach.application_unit
+    ${whereClause}
+    HAVING (target_qty > 0 OR achievement_qty > 0 OR target_amount > 0 OR achievement_amount > 0)
+    ORDER BY territory_name, d.dealer_name, application_unit, year DESC, month DESC
+  `;
+  
+  const finalParams = [...tgtJoinParams, ...queryParams];
+  
+  db.query(query, finalParams, (err, results) => {
+    if (err) {
+      console.error('Error fetching unit details:', err);
+      return res.status(500).json({ error: 'Failed to fetch unit details', details: err.message });
+    }
+    
+    // Group by application unit for summary
+    const unitSummary = {};
+    results.forEach(row => {
+      const unit = row.application_unit || 'Total';
+      if (!unitSummary[unit]) {
+        unitSummary[unit] = {
+          application_unit: unit,
+          total_target_qty: 0,
+          total_target_amount: 0,
+          total_achievement_qty: 0,
+          total_achievement_amount: 0,
+          dealers: []
+        };
+      }
+      unitSummary[unit].total_target_qty += row.target_qty;
+      unitSummary[unit].total_target_amount += row.target_amount;
+      unitSummary[unit].total_achievement_qty += row.achievement_qty;
+      unitSummary[unit].total_achievement_amount += row.achievement_amount;
+      unitSummary[unit].dealers.push(row);
+    });
+    
+    // Calculate percentages for summary
+    Object.keys(unitSummary).forEach(unit => {
+      const summary = unitSummary[unit];
+      summary.qty_gap = summary.total_achievement_qty - summary.total_target_qty;
+      summary.amount_gap = summary.total_achievement_amount - summary.total_target_amount;
+      summary.qty_percentage = summary.total_target_qty > 0 
+        ? (summary.total_achievement_qty / summary.total_target_qty) * 100 
+        : 0;
+      summary.amount_percentage = summary.total_target_amount > 0 
+        ? (summary.total_achievement_amount / summary.total_target_amount) * 100 
+        : 0;
+    });
+    
+    res.json({
+      success: true,
+      data: results,
+      summary: Object.values(unitSummary),
+      comparison_type: comparison_type
     });
   });
 });
@@ -1676,10 +2185,15 @@ router.get('/abp-vs-achievement', (req, res) => {
       a.achievement_amount,
       a.achievement_quantity,
       a.amount_percentage,
-      a.quantity_percentage
+      a.quantity_percentage,
+      d.nat_code,
+      d.nat_name,
+      d.div_code,
+      d.div_name
     FROM abp_vs_achievement a
+    LEFT JOIN dealers d ON a.dealer_code = d.dealer_code
     ${whereClause}
-    ORDER BY a.dealer_name ASC, a.year DESC, a.month DESC
+    ORDER BY d.nat_name ASC, a.territory_name ASC, a.dealer_name ASC
   `;
   
   console.log('Query:', query);
@@ -1737,10 +2251,15 @@ router.get('/forecast-vs-achievement', (req, res) => {
       f.achievement_amount,
       f.achievement_quantity,
       f.amount_percentage,
-      f.quantity_percentage
+      f.quantity_percentage,
+      d.nat_code,
+      d.nat_name,
+      d.div_code,
+      d.div_name
     FROM forecast_vs_achievement f
+    LEFT JOIN dealers d ON f.dealer_code = d.dealer_code
     ${whereClause}
-    ORDER BY f.dealer_name ASC, f.year DESC, f.month DESC
+    ORDER BY d.nat_name ASC, f.territory_name ASC, f.dealer_name ASC
   `;
   
   console.log('Query:', query);
@@ -2213,6 +2732,289 @@ router.put('/achievement/:dealerCode/:year/:month', (req, res) => {
       message: 'Achievement updated successfully'
     });
   });
+});
+
+// Upload Sales Register and store date-wise sales data (for closing balance calculation)
+router.post('/sales/daily-upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  // Check if user uploaded a lock file
+  if (req.file.originalname.startsWith('~$')) {
+    return res.status(400).json({ 
+      error: 'Lock file detected',
+      details: 'You uploaded a temporary lock file (~$). Please close Excel and upload the actual file without ~$ prefix.',
+      uploadedFile: req.file.originalname
+    });
+  }
+
+  try {
+    console.log('Daily Sales Upload - File received:', req.file.originalname, 'Size:', req.file.size, 'bytes');
+    
+    if (!req.file.buffer || req.file.buffer.length === 0) {
+      return res.status(400).json({ error: 'File buffer is empty. Please try uploading the file again.' });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    
+    const data = xlsx.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    
+    if (data.length < 9) {
+      return res.status(400).json({ error: 'Invalid file format. Expected headers in row 8 and data starting from row 9.' });
+    }
+    
+    // Row 8 (index 7) contains headers
+    const headerRow = data[7] || [];
+    
+    // Find required columns
+    const findColumn = (headers, possibleNames) => {
+      for (const name of possibleNames) {
+        const index = headers.findIndex(h => {
+          if (!h) return false;
+          const header = String(h).trim().toLowerCase();
+          const searchName = name.toLowerCase();
+          return header === searchName || 
+                 header.includes(searchName) || 
+                 searchName.includes(header) ||
+                 header.replace(/[\s_\-\.]/g, '') === searchName.replace(/[\s_\-\.]/g, '');
+        });
+        if (index !== -1) return index;
+      }
+      return -1;
+    };
+    
+    const dealerCodeIndex = findColumn(headerRow, ['customer code', 'dealer code', 'dealer_code', 'dealerco', 'erp id', 'erp_id', 'erpid', 'code', 'dealer']);
+    const orderDateIndex = findColumn(headerRow, ['order date', 'order_date', 'date', 'invoice date', 'orderdate']);
+    // Prioritize "actual invoice amount" - must contain "actual" to avoid matching regular "invoice amount"
+    let amountIndex = findColumn(headerRow, ['actual invoice amount', 'actual_invoice_amount']);
+    if (amountIndex === -1) {
+      // Fallback to regular invoice amount if actual not found
+      amountIndex = findColumn(headerRow, ['invoice amount', 'invoice_amount', 'amount']);
+      if (amountIndex !== -1) {
+        console.warn('Daily Sales Upload - Warning: Using "Invoice Amount" instead of "Actual Invoice Amount"');
+      }
+    }
+    const quantityIndex = findColumn(headerRow, ['actual invoice quantity', 'actual_invoice_qunatity', 'actual_invoice_quantity']);
+    const applicationUnitIndex = findColumn(headerRow, ['application name', 'application unit', 'application_unit', 'application', 'unit', 'app unit']);
+    
+    if (dealerCodeIndex === -1) {
+      return res.status(400).json({ 
+        error: 'Dealer Code or Customer Code column not found',
+        foundColumns: headerRow.filter(h => h)
+      });
+    }
+    
+    if (orderDateIndex === -1) {
+      return res.status(400).json({ 
+        error: 'Order Date column not found',
+        foundColumns: headerRow.filter(h => h)
+      });
+    }
+    
+    if (amountIndex === -1) {
+      return res.status(400).json({ 
+        error: 'Invoice Amount or Actual Invoice Amount column not found',
+        foundColumns: headerRow.filter(h => h)
+      });
+    }
+    
+    console.log('Daily Sales Upload - Columns found:');
+    console.log('  Dealer Code:', dealerCodeIndex, headerRow[dealerCodeIndex]);
+    console.log('  Order Date:', orderDateIndex, headerRow[orderDateIndex]);
+    console.log('  Amount:', amountIndex, headerRow[amountIndex]);
+    if (quantityIndex !== -1) {
+      console.log('  Quantity:', quantityIndex, headerRow[quantityIndex]);
+    }
+    if (applicationUnitIndex !== -1) {
+      console.log('  Application Unit:', applicationUnitIndex, headerRow[applicationUnitIndex]);
+    }
+    
+    // Process data rows starting from row 9 (index 8)
+    const dailySales = [];
+    const missingDealers = [];
+    const errors = [];
+    let totalRowsProcessed = 0;
+    let rowsWithData = 0;
+    
+    for (let i = 8; i < data.length; i++) {
+      const row = data[i];
+      if (!row || row.length === 0) continue;
+      
+      totalRowsProcessed++;
+      
+      // Get dealer code
+      const dealerCodeRaw = row[dealerCodeIndex];
+      if (!dealerCodeRaw && dealerCodeRaw !== 0) continue;
+      
+      const dealerCode = normalizeDealerCode(dealerCodeRaw);
+      if (!dealerCode || dealerCode === '0') continue;
+      
+      // Get order date
+      const orderDateRaw = row[orderDateIndex];
+      if (!orderDateRaw) continue;
+      
+      const orderDate = excelDateToJSDate(orderDateRaw);
+      if (!orderDate || isNaN(orderDate.getTime())) {
+        continue;
+      }
+      
+      const transactionDate = orderDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+      
+      // Get sales amount
+      const salesAmount = parseFloat(row[amountIndex]) || 0;
+      if (salesAmount <= 0) continue; // Skip zero or negative amounts
+      
+      // Get quantity (optional)
+      const salesQuantity = quantityIndex !== -1 ? (parseFloat(row[quantityIndex]) || 0) : 0;
+      
+      // Get application unit (optional)
+      const applicationUnit = applicationUnitIndex !== -1 && row[applicationUnitIndex] 
+        ? String(row[applicationUnitIndex]).trim() 
+        : null;
+      
+      rowsWithData++;
+      
+      dailySales.push({
+        dealerCode,
+        originalCode: String(dealerCodeRaw || '').trim(),
+        transactionDate,
+        salesAmount,
+        salesQuantity,
+        applicationUnit,
+        rowIndex: i + 1
+      });
+    }
+    
+    if (dailySales.length === 0) {
+      return res.status(400).json({ 
+        error: 'No valid sales data found in Excel file.',
+        totalRowsProcessed: totalRowsProcessed,
+        suggestion: 'Check that Order Date and Actual Invoice Amount columns have valid data.'
+      });
+    }
+    
+    console.log(`Daily Sales Upload - Found ${dailySales.length} sales transactions from ${totalRowsProcessed} rows`);
+    
+    // Verify dealers exist and insert daily sales
+    db.query('SELECT dealer_code FROM dealers', (verifyErr, allDealers) => {
+      if (verifyErr) {
+        console.error('Error fetching dealers:', verifyErr);
+        return res.status(500).json({ error: 'Failed to verify dealer codes', details: verifyErr.message });
+      }
+      
+      // Create mapping: normalized code -> actual dealer_code from database
+      const dealerCodeMap = {};
+      allDealers.forEach(dealer => {
+        const normalized = normalizeDealerCode(dealer.dealer_code);
+        dealerCodeMap[normalized] = dealer.dealer_code;
+      });
+      
+      // Filter valid sales and use actual dealer codes from DB
+      const validSales = [];
+      dailySales.forEach(sale => {
+        if (dealerCodeMap[sale.dealerCode]) {
+          validSales.push({
+            ...sale,
+            dealer_code: dealerCodeMap[sale.dealerCode] // Use actual format from DB
+          });
+        } else {
+          if (missingDealers.length < 20) {
+            missingDealers.push(sale.dealerCode);
+          }
+        }
+      });
+      
+      if (validSales.length === 0) {
+        return res.status(400).json({
+          error: 'No valid sales found. All dealer codes in the file do not exist in the system',
+          missingDealers: [...new Set(missingDealers)],
+          suggestion: 'Please add these dealers to the system first, or check if the dealer codes are correct.'
+        });
+      }
+      
+      // Group by dealer_code, transaction_date, and application_unit to sum amounts
+      // This handles cases where same dealer has multiple transactions on same date
+      const groupedSales = {};
+      validSales.forEach(sale => {
+        const key = `${sale.dealer_code}-${sale.transactionDate}-${sale.applicationUnit || 'Total'}`;
+        if (!groupedSales[key]) {
+          groupedSales[key] = {
+            dealer_code: sale.dealer_code,
+            transaction_date: sale.transactionDate,
+            sales_amount: 0,
+            sales_quantity: 0,
+            application_unit: sale.applicationUnit || null
+          };
+        }
+        groupedSales[key].sales_amount += sale.salesAmount;
+        groupedSales[key].sales_quantity += sale.salesQuantity;
+      });
+      
+      const salesToInsert = Object.values(groupedSales);
+      
+      // Insert daily sales - each record represents total sales for a dealer on a specific date
+      // Use ON DUPLICATE KEY UPDATE to handle re-uploads (sum amounts)
+      const insertQuery = `
+        INSERT INTO daily_sales 
+        (dealer_code, transaction_date, sales_amount, sales_quantity, application_unit) 
+        VALUES ?
+        ON DUPLICATE KEY UPDATE
+          sales_amount = sales_amount + VALUES(sales_amount),
+          sales_quantity = sales_quantity + VALUES(sales_quantity),
+          updated_at = CURRENT_TIMESTAMP
+      `;
+      
+      const values = salesToInsert.map(s => [
+        s.dealer_code,
+        s.transaction_date,
+        s.sales_amount,
+        s.sales_quantity,
+        s.application_unit
+      ]);
+      
+      db.query(insertQuery, [values], (err, result) => {
+        if (err) {
+          console.error('Error inserting daily sales:', err);
+          return res.status(500).json({ error: 'Failed to upload daily sales', details: err.message });
+        }
+        
+        // Count unique dealers
+        const uniqueDealers = new Set(salesToInsert.map(s => s.dealer_code));
+        
+        const response = {
+          success: true,
+          message: `Daily sales data uploaded successfully.`,
+          summary: {
+            total_transactions: dailySales.length,
+            unique_daily_records: salesToInsert.length,
+            inserted: result.affectedRows,
+            dealers: uniqueDealers.size,
+            date_range: {
+              from: salesToInsert.length > 0 ? Math.min(...salesToInsert.map(s => s.transaction_date)) : null,
+              to: salesToInsert.length > 0 ? Math.max(...salesToInsert.map(s => s.transaction_date)) : null
+            }
+          }
+        };
+        
+        if (missingDealers.length > 0) {
+          response.warning = `Some dealer codes in the file do not exist in the system: ${[...new Set(missingDealers)].slice(0, 10).join(', ')}${missingDealers.length > 10 ? '...' : ''}`;
+          response.missing_dealers_count = missingDealers.length;
+        }
+        
+        res.json(response);
+      });
+    });
+    
+  } catch (error) {
+    console.error('Error processing daily sales upload:', error);
+    res.status(500).json({ 
+      error: 'Failed to process file', 
+      details: error.message 
+    });
+  }
 });
 
 module.exports = router;

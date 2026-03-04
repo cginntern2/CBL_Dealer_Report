@@ -37,17 +37,19 @@ const Home = () => {
 
   return (
     <div className="home-page">
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-        <button className="btn btn-secondary" onClick={fetchWelcome}>
-          <RefreshCw size={18} /> Refresh
-        </button>
-      </div>
       <div className="welcome-section">
         <div className="welcome-card">
-          <h2 className="welcome-title">{welcomeMessage}</h2>
-          <p className="welcome-subtitle">
-            Manage and track your dealer reports, achievements, and analytics from one central location.
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
+            <div style={{ flex: 1 }}>
+              <h2 className="welcome-title">{welcomeMessage}</h2>
+              <p className="welcome-subtitle">
+                Manage and track your dealer reports, achievements, and analytics from one central location.
+              </p>
+            </div>
+            <button className="refresh-btn" onClick={fetchWelcome}>
+              <RefreshCw size={18} /> Refresh
+            </button>
+          </div>
         </div>
       </div>
 

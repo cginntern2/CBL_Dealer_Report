@@ -65,6 +65,10 @@ app.use('/api/overdue', overdueRoutes);
 const creditDaysRoutes = require('./routes/credit-days');
 app.use('/api/credit-days', creditDaysRoutes);
 
+// Billing cycles routes
+const billingCyclesRoutes = require('./routes/billing-cycles');
+app.use('/api/billing-cycles', billingCyclesRoutes);
+
 // Dashboard statistics endpoint
 app.get('/api/dashboard/stats', (req, res) => {
   const stats = {};

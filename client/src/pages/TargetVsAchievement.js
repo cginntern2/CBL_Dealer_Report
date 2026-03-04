@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Upload, Search, X, TrendingUp, TrendingDown, Target, Calendar, Filter, BarChart3, Download, Edit2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import './TargetVsAchievement.css';
 
 const TargetVsAchievement = () => {
@@ -29,6 +30,15 @@ const TargetVsAchievement = () => {
   const [breakdownSearchTerm, setBreakdownSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [expandedTerritories, setExpandedTerritories] = useState(new Set());
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'summary', or 'unit-details'
+  const [dashboardComparisonType, setDashboardComparisonType] = useState('abp'); // 'abp' or 'forecast' for dashboard
+  const [unitDetailsData, setUnitDetailsData] = useState([]);
+  const [unitDetailsLoading, setUnitDetailsLoading] = useState(false);
+  const [selectedApplicationUnit, setSelectedApplicationUnit] = useState('all');
+  const [unitComparisonType, setUnitComparisonType] = useState('abp'); // 'abp' or 'forecast'
+  const [availableApplicationUnits, setAvailableApplicationUnits] = useState([]);
+  const [expandedUnitTerritories, setExpandedUnitTerritories] = useState(new Set());
+  const [isInitialMount, setIsInitialMount] = useState(true);
   
   // Filters
   const [selectedYear, setSelectedYear] = useState('');
@@ -38,28 +48,60 @@ const TargetVsAchievement = () => {
   const [availableMonths, setAvailableMonths] = useState([]);
   const [territories, setTerritories] = useState([]);
 
-  const fetchReport = useCallback(async () => {
+  const fetchReport = useCallback(async (forceShowAll = false) => {
     setLoading(true);
     try {
       const params = {};
-      if (!showAll) {
+      // For dashboard, always fetch all data
+      const shouldShowAll = forceShowAll || showAll || activeTab === 'dashboard';
+      if (!shouldShowAll) {
         params.limit = 10;
       }
-      params.showAll = showAll.toString();
+      params.showAll = shouldShowAll.toString();
       
       // Only add params if they have values (not empty strings)
       if (selectedYear && selectedYear !== '' && selectedYear !== 'all') {
-        params.year = selectedYear;
+        params.year = parseInt(selectedYear);
       }
       if (selectedMonth && selectedMonth !== '' && selectedMonth !== 'all') {
-        params.month = selectedMonth;
+        params.month = parseInt(selectedMonth);
       }
       if (selectedTerritory && selectedTerritory !== 'all') {
         params.territory = selectedTerritory;
       }
       
+      console.log('Fetching report with params:', params);
+      console.log('Selected filters:', { selectedYear, selectedMonth, selectedTerritory, activeTab });
       const response = await axios.get('/api/targets/report', { params });
-      setReportData(response.data.data || []);
+      console.log('Report response:', response.data);
+      const data = response.data.data || [];
+      console.log('Report data length:', data.length);
+      
+      // Debug: Check forecast data in response
+      if (selectedMonth) {
+        const forecastData = data.filter(item => parseFloat(item.forecast_target) > 0);
+        console.log(`Forecast data for month ${selectedMonth}: ${forecastData.length} rows with forecast_target > 0`);
+        if (forecastData.length > 0) {
+          console.log('Sample forecast data:', forecastData.slice(0, 3).map(item => ({
+            dealer_code: item.dealer_code,
+            dealer_name: item.dealer_name,
+            territory_name: item.territory_name,
+            forecast_target: item.forecast_target,
+            forecast_quantity: item.forecast_quantity,
+            achievement: item.achievement
+          })));
+        } else {
+          console.log('WARNING: No forecast data found in response!');
+          console.log('Sample data (first 3):', data.slice(0, 3).map(item => ({
+            dealer_code: item.dealer_code,
+            forecast_target: item.forecast_target,
+            forecast_quantity: item.forecast_quantity,
+            abp_target: item.abp_target
+          })));
+        }
+      }
+      
+      setReportData(data);
       setTotalRecords(response.data.total || 0);
     } catch (error) {
       console.error('Error fetching report:', error);
@@ -68,14 +110,20 @@ const TargetVsAchievement = () => {
     } finally {
       setLoading(false);
     }
-  }, [showAll, selectedYear, selectedMonth, selectedTerritory]);
+  }, [showAll, selectedYear, selectedMonth, selectedTerritory, activeTab]);
 
   const fetchStats = useCallback(async () => {
     try {
       const params = {};
-      if (selectedYear) params.year = selectedYear;
-      if (selectedMonth) params.month = selectedMonth;
-      if (selectedTerritory !== 'all') params.territory = selectedTerritory;
+      if (selectedYear && selectedYear !== '' && selectedYear !== 'all') {
+        params.year = parseInt(selectedYear);
+      }
+      if (selectedMonth && selectedMonth !== '' && selectedMonth !== 'all') {
+        params.month = parseInt(selectedMonth);
+      }
+      if (selectedTerritory && selectedTerritory !== 'all') {
+        params.territory = selectedTerritory;
+      }
       
       const response = await axios.get('/api/targets/stats', { params });
       setStats(response.data.stats || {});
@@ -103,22 +151,37 @@ const TargetVsAchievement = () => {
     }
   }, []);
 
-  // Fetch report data on mount
+  // Fetch filters and territories on mount
   useEffect(() => {
     fetchFilters();
     fetchTerritories();
   }, [fetchFilters, fetchTerritories]);
 
-  // Fetch report and stats when filters change
+  // Fetch report and stats on mount and when filters/tab change
   useEffect(() => {
-    fetchReport();
+    // Always fetch data - on mount and when filters/tab change
+    if (activeTab === 'dashboard') {
+      fetchReport(true);
+    } else {
+      fetchReport();
+    }
     fetchStats();
-  }, [fetchReport, fetchStats, selectedYear, selectedMonth, selectedTerritory, showAll]);
+  }, [selectedYear, selectedMonth, selectedTerritory, showAll, activeTab, fetchReport, fetchStats]);
+  
+  // Mark initial mount as complete after first render
+  useEffect(() => {
+    setIsInitialMount(false);
+  }, []);
 
   const handleRefresh = () => {
     fetchFilters();
     fetchTerritories();
-    fetchReport();
+    // Force fetch with current filters
+    if (activeTab === 'dashboard') {
+      fetchReport(true);
+    } else {
+      fetchReport();
+    }
     fetchStats();
     if (breakdownType) {
       fetchBreakdown(breakdownType);
@@ -184,9 +247,15 @@ const TargetVsAchievement = () => {
   const handleExport = async () => {
     try {
       const params = new URLSearchParams();
-      if (selectedYear) params.append('year', selectedYear);
-      if (selectedMonth) params.append('month', selectedMonth);
-      if (selectedTerritory !== 'all') params.append('territory', selectedTerritory);
+      if (selectedYear && selectedYear !== '' && selectedYear !== 'all') {
+        params.append('year', parseInt(selectedYear));
+      }
+      if (selectedMonth && selectedMonth !== '' && selectedMonth !== 'all') {
+        params.append('month', parseInt(selectedMonth));
+      }
+      if (selectedTerritory && selectedTerritory !== 'all') {
+        params.append('territory', selectedTerritory);
+      }
       params.append('showAll', 'true');
       
       const response = await axios.get(`/api/targets/export?${params.toString()}`, {
@@ -248,6 +317,51 @@ const TargetVsAchievement = () => {
     }
   };
 
+  // Fetch available application units
+  const fetchApplicationUnits = useCallback(async (comparisonType) => {
+    try {
+      const response = await axios.get('/api/targets/application-units', { 
+        params: { comparison_type: comparisonType || 'abp' } 
+      });
+      setAvailableApplicationUnits(response.data.units || []);
+    } catch (error) {
+      console.error('Error fetching application units:', error);
+      setAvailableApplicationUnits([]);
+    }
+  }, []);
+
+  // Fetch unit details
+  const fetchUnitDetails = useCallback(async (comparisonType = unitComparisonType, applicationUnit = selectedApplicationUnit) => {
+    setUnitDetailsLoading(true);
+    try {
+      const params = {
+        comparison_type: comparisonType || 'abp'
+      };
+      
+      if (selectedYear && selectedYear !== '' && selectedYear !== 'all') {
+        params.year = parseInt(selectedYear);
+      }
+      if (selectedMonth && selectedMonth !== '' && selectedMonth !== 'all') {
+        params.month = parseInt(selectedMonth);
+      }
+      if (selectedTerritory && selectedTerritory !== 'all') {
+        params.territory = selectedTerritory;
+      }
+      if (applicationUnit && applicationUnit !== 'all') {
+        params.application_unit = applicationUnit;
+      }
+      
+      const response = await axios.get('/api/targets/unit-details', { params });
+      setUnitDetailsData(response.data.data || []);
+    } catch (error) {
+      console.error('Error fetching unit details:', error);
+      alert('Failed to fetch unit details: ' + (error.response?.data?.error || error.message));
+      setUnitDetailsData([]);
+    } finally {
+      setUnitDetailsLoading(false);
+    }
+  }, [unitComparisonType, selectedApplicationUnit, selectedYear, selectedMonth, selectedTerritory]);
+
   // Fetch dealer-wise breakdown
   const fetchBreakdown = useCallback(async (type) => {
     setBreakdownLoading(true);
@@ -261,10 +375,10 @@ const TargetVsAchievement = () => {
       const params = {};
       // Only add params if they have actual values (not empty strings)
       if (selectedYear && selectedYear !== '' && selectedYear !== 'all') {
-        params.year = selectedYear;
+        params.year = parseInt(selectedYear);
       }
       if (selectedMonth && selectedMonth !== '' && selectedMonth !== 'all') {
-        params.month = selectedMonth;
+        params.month = parseInt(selectedMonth);
       }
       if (selectedTerritory && selectedTerritory !== 'all') {
         params.territory = selectedTerritory;
@@ -394,22 +508,7 @@ const TargetVsAchievement = () => {
     const territories = Object.keys(territoryMap).map(territoryName => {
       const dealers = territoryMap[territoryName];
       
-      // Calculate average percentages
-      const validAmountPercents = dealers
-        .map(d => parseFloat(d.amount_percentage || 0))
-        .filter(p => !isNaN(p) && p > 0);
-      const avgAmountPercent = validAmountPercents.length > 0
-        ? validAmountPercents.reduce((sum, p) => sum + p, 0) / validAmountPercents.length
-        : 0;
-      
-      const validQtyPercents = dealers
-        .map(d => parseFloat(d.quantity_percentage || 0))
-        .filter(p => !isNaN(p) && p > 0);
-      const avgQtyPercent = validQtyPercents.length > 0
-        ? validQtyPercents.reduce((sum, p) => sum + p, 0) / validQtyPercents.length
-        : 0;
-      
-      // Calculate totals
+      // Calculate totals first
       const totalTargetAmount = dealers.reduce((sum, d) => {
         const target = breakdownType === 'abp' ? (d.abp_target_amount || 0) : (d.forecast_target_amount || 0);
         return sum + parseFloat(target);
@@ -422,11 +521,20 @@ const TargetVsAchievement = () => {
       }, 0);
       const totalAchievementQty = dealers.reduce((sum, d) => sum + parseFloat(d.achievement_quantity || 0), 0);
       
+      // Calculate actual percentages from totals (not averages)
+      const actualAmountPercent = totalTargetAmount > 0 
+        ? (totalAchievementAmount / totalTargetAmount) * 100 
+        : 0;
+      
+      const actualQtyPercent = totalTargetQty > 0 
+        ? (totalAchievementQty / totalTargetQty) * 100 
+        : 0;
+      
       return {
         territoryName,
         dealers,
-        avgAmountPercent,
-        avgQtyPercent,
+        avgAmountPercent: actualAmountPercent, // Using actual percentage, keeping name for compatibility
+        avgQtyPercent: actualQtyPercent, // Using actual percentage, keeping name for compatibility
         totalTargetAmount,
         totalAchievementAmount,
         totalTargetQty,
@@ -472,6 +580,69 @@ const TargetVsAchievement = () => {
       newExpanded.add(territoryName);
     }
     setExpandedTerritories(newExpanded);
+  };
+
+  // Toggle territory expansion for unit details
+  const toggleUnitTerritory = (territoryName) => {
+    const newExpanded = new Set(expandedUnitTerritories);
+    if (newExpanded.has(territoryName)) {
+      newExpanded.delete(territoryName);
+    } else {
+      newExpanded.add(territoryName);
+    }
+    setExpandedUnitTerritories(newExpanded);
+  };
+
+  // Group unit details data by territory
+  const getUnitDetailsTerritoryGroupedData = () => {
+    if (!unitDetailsData || unitDetailsData.length === 0) return [];
+    
+    // Group by territory
+    const territoryMap = {};
+    unitDetailsData.forEach(item => {
+      const territoryName = item.territory_name || 'N/A';
+      if (!territoryMap[territoryName]) {
+        territoryMap[territoryName] = [];
+      }
+      territoryMap[territoryName].push(item);
+    });
+    
+    // Calculate totals per territory
+    const territories = Object.keys(territoryMap).map(territoryName => {
+      const items = territoryMap[territoryName];
+      
+      const totalTargetQty = items.reduce((sum, d) => sum + parseFloat(d.target_qty || 0), 0);
+      const totalAchievementQty = items.reduce((sum, d) => sum + parseFloat(d.achievement_qty || 0), 0);
+      const totalTargetAmount = items.reduce((sum, d) => sum + parseFloat(d.target_amount || 0), 0);
+      const totalAchievementAmount = items.reduce((sum, d) => sum + parseFloat(d.achievement_amount || 0), 0);
+      
+      const qtyPercent = totalTargetQty > 0 ? (totalAchievementQty / totalTargetQty) * 100 : 0;
+      const amountPercent = totalTargetAmount > 0 ? (totalAchievementAmount / totalTargetAmount) * 100 : 0;
+      
+      return {
+        territoryName,
+        items,
+        totalTargetQty,
+        totalAchievementQty,
+        totalQtyGap: totalAchievementQty - totalTargetQty,
+        qtyPercent,
+        totalTargetAmount,
+        totalAchievementAmount,
+        totalAmountGap: totalAchievementAmount - totalTargetAmount,
+        amountPercent,
+        itemCount: items.length,
+        uniqueUnits: [...new Set(items.map(i => i.application_unit))].length
+      };
+    });
+    
+    // Sort territories by territory name
+    territories.sort((a, b) => {
+      if (a.territoryName === 'N/A') return 1;
+      if (b.territoryName === 'N/A') return -1;
+      return a.territoryName.localeCompare(b.territoryName);
+    });
+    
+    return territories;
   };
 
   // Get sorted and filtered breakdown data (for backward compatibility, but now we use territory grouping)
@@ -665,28 +836,808 @@ const TargetVsAchievement = () => {
         </div>
       </div>
 
-      {/* View Options */}
-      <div className="view-options" style={{ display: 'flex', gap: '20px', justifyContent: 'center', marginTop: '40px', marginBottom: '40px', flexWrap: 'wrap' }}>
-        <button 
-          className="btn btn-primary"
-          onClick={() => fetchBreakdown('abp')}
-          style={{ padding: '15px 40px', fontSize: '16px', minWidth: '250px' }}
-        >
-          <BarChart3 size={20} style={{ marginRight: '10px', verticalAlign: 'middle' }} />
-          View ABP vs Achievement
-        </button>
-        <button 
-          className="btn btn-primary"
-          onClick={() => fetchBreakdown('forecast')}
-          style={{ padding: '15px 40px', fontSize: '16px', minWidth: '250px' }}
-        >
-          <BarChart3 size={20} style={{ marginRight: '10px', verticalAlign: 'middle' }} />
-          View Forecast vs Achievement
-        </button>
+      {/* Tabs */}
+      <div className="tabs-container" style={{ marginTop: '20px', marginBottom: '20px' }}>
+        <div className="tabs" style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #e5e7eb', flexWrap: 'wrap' }}>
+          <button
+            className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('dashboard');
+            }}
+            style={{
+              padding: '12px 24px',
+              border: 'none',
+              background: 'none',
+              borderBottom: activeTab === 'dashboard' ? '3px solid #3b82f6' : '3px solid transparent',
+              color: activeTab === 'dashboard' ? '#3b82f6' : '#6b7280',
+              fontWeight: activeTab === 'dashboard' ? '600' : '400',
+              cursor: 'pointer',
+              fontSize: '15px'
+            }}
+          >
+            Dashboard
+          </button>
+          <button
+            className={`tab ${activeTab === 'summary' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('summary');
+              setBreakdownType('');
+              setBreakdownData([]);
+            }}
+            style={{
+              padding: '12px 24px',
+              border: 'none',
+              background: 'none',
+              borderBottom: activeTab === 'summary' ? '3px solid #3b82f6' : '3px solid transparent',
+              color: activeTab === 'summary' ? '#3b82f6' : '#6b7280',
+              fontWeight: activeTab === 'summary' ? '600' : '400',
+              cursor: 'pointer',
+              fontSize: '15px'
+            }}
+          >
+            Detailed Summary
+          </button>
+          <button
+            className={`tab ${activeTab === 'unit-details' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('unit-details');
+              fetchApplicationUnits(unitComparisonType);
+              fetchUnitDetails();
+            }}
+            style={{
+              padding: '12px 24px',
+              border: 'none',
+              background: 'none',
+              borderBottom: activeTab === 'unit-details' ? '3px solid #3b82f6' : '3px solid transparent',
+              color: activeTab === 'unit-details' ? '#3b82f6' : '#6b7280',
+              fontWeight: activeTab === 'unit-details' ? '600' : '400',
+              cursor: 'pointer',
+              fontSize: '15px'
+            }}
+          >
+            Application Unit Details
+          </button>
+        </div>
       </div>
 
-      {/* Breakdown (inline, no popup) */}
-      {breakdownType && (
+      {/* Tab Content */}
+      {activeTab === 'dashboard' && (
+        <div style={{ marginTop: '20px' }}>
+          {/* Both Comparisons Side by Side - No Selector Needed */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '50px' }}>
+            {/* ABP vs Achievement Section */}
+            <div>
+              <h2 style={{ fontSize: '22px', fontWeight: '600', marginBottom: '30px', color: '#1f2937', textAlign: 'center' }}>
+                ABP vs Achievement
+              </h2>
+              {(() => {
+                // Territory-wise average: Calculate percentage for each territory, then average those percentages
+                // Use rows where ABP target exists (no forecast override)
+                const abpRows = reportData.filter(item => {
+                  const forecastTarget = parseFloat(item.forecast_target) || 0;
+                  const abpTarget = parseFloat(item.abp_target) || 0;
+                  return forecastTarget === 0 && abpTarget > 0; // Only ABP rows, no forecast
+                });
+
+                // Group by territory and calculate percentage for each territory
+                const territoryMap = {};
+                abpRows.forEach(item => {
+                  const territory = item.territory_name || 'N/A';
+                  if (!territoryMap[territory]) {
+                    territoryMap[territory] = {
+                      totalTarget: 0,
+                      totalAchievement: 0,
+                      totalTargetQty: 0,
+                      totalAchievementQty: 0
+                    };
+                  }
+                  territoryMap[territory].totalTarget += parseFloat(item.abp_target) || 0;
+                  territoryMap[territory].totalAchievement += parseFloat(item.achievement) || 0;
+                  territoryMap[territory].totalTargetQty += parseFloat(item.abp_quantity) || 0;
+                  territoryMap[territory].totalAchievementQty += parseFloat(item.achievement_quantity) || 0;
+                });
+
+                // Calculate percentage for each territory, then average
+                const territoryPercentages = Object.values(territoryMap)
+                  .filter(t => t.totalTarget > 0)
+                  .map(t => ({
+                    salesPercent: (t.totalAchievement / t.totalTarget) * 100,
+                    qtyPercent: t.totalTargetQty > 0 ? (t.totalAchievementQty / t.totalTargetQty) * 100 : 0
+                  }));
+
+                const abpSalesPercent = territoryPercentages.length > 0
+                  ? territoryPercentages.reduce((sum, t) => sum + t.salesPercent, 0) / territoryPercentages.length
+                  : 0;
+
+                const abpQuantityPercent = territoryPercentages.length > 0
+                  ? territoryPercentages.reduce((sum, t) => sum + t.qtyPercent, 0) / territoryPercentages.length
+                  : 0;
+
+                return (
+                  <>
+                    {/* ABP Percentage Cards */}
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '40px', marginBottom: '40px', flexWrap: 'wrap' }}>
+                      <div style={{ 
+                        background: 'white', 
+                        padding: '40px 60px', 
+                        borderRadius: '12px', 
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                        border: '2px solid #e5e7eb',
+                        textAlign: 'center',
+                        minWidth: '250px'
+                      }}>
+                        <div style={{ fontSize: '18px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
+                          Sales Achievement %
+                        </div>
+                        <div style={{ 
+                          fontSize: '48px', 
+                          fontWeight: '700', 
+                          color: abpSalesPercent >= 100 ? '#10b981' : abpSalesPercent >= 80 ? '#f59e0b' : '#ef4444'
+                        }}>
+                          {formatPercentage(abpSalesPercent)}
+                        </div>
+                      </div>
+
+                      <div style={{ 
+                        background: 'white', 
+                        padding: '40px 60px', 
+                        borderRadius: '12px', 
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                        border: '2px solid #e5e7eb',
+                        textAlign: 'center',
+                        minWidth: '250px'
+                      }}>
+                        <div style={{ fontSize: '18px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
+                          Quantity Achievement %
+                        </div>
+                        <div style={{ 
+                          fontSize: '48px', 
+                          fontWeight: '700', 
+                          color: abpQuantityPercent >= 100 ? '#10b981' : abpQuantityPercent >= 80 ? '#f59e0b' : '#ef4444'
+                        }}>
+                          {formatPercentage(abpQuantityPercent)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ABP Charts */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+                      {/* ABP Sales Chart */}
+                      <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
+                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Sales Achievement Percentage by Territory (ABP)</h3>
+                        {(() => {
+                          if (reportData.length === 0) {
+                            return (
+                              <div style={{ padding: '20px', textAlign: 'center' }}>
+                                <p style={{ color: '#6b7280' }}>No data available</p>
+                              </div>
+                            );
+                          }
+
+                          // Calculate average percentage per territory (average of individual dealer percentages)
+                          const territoryMap = {};
+                          reportData.forEach(item => {
+                            const territory = item.territory_name || 'N/A';
+                            const forecastTarget = parseFloat(item.forecast_target) || 0;
+                            const abpTarget = parseFloat(item.abp_target) || 0;
+                            const achievement = parseFloat(item.achievement) || 0;
+                            
+                            // Only process ABP rows (no forecast override)
+                            if (forecastTarget === 0 && abpTarget > 0) {
+                              if (!territoryMap[territory]) {
+                                territoryMap[territory] = { territory: territory, percentages: [] };
+                              }
+                              const dealerPercent = (achievement / abpTarget) * 100;
+                              territoryMap[territory].percentages.push(dealerPercent);
+                            }
+                          });
+
+                          const territoryData = Object.values(territoryMap)
+                            .filter(t => t.percentages.length > 0)
+                            .map(t => {
+                              const avgPercent = t.percentages.reduce((sum, p) => sum + p, 0) / t.percentages.length;
+                              return {
+                                name: t.territory.length > 15 ? t.territory.substring(0, 15) + '...' : t.territory,
+                                fullName: t.territory,
+                                amountPercent: parseFloat(avgPercent.toFixed(2))
+                              };
+                            });
+
+                          if (territoryData.length === 0) {
+                            return (
+                              <div style={{ padding: '20px', textAlign: 'center' }}>
+                                <p style={{ color: '#6b7280' }}>No territory data available</p>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <ResponsiveContainer width="100%" height={350}>
+                              <BarChart data={territoryData.sort((a, b) => b.amountPercent - a.amountPercent)} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} interval={0} />
+                                <YAxis domain={[0, 120]} />
+                                <Tooltip 
+                                  formatter={(value) => `${parseFloat(value).toFixed(2)}%`}
+                                  labelFormatter={(label, payload) => payload && payload[0] ? payload[0].payload.fullName : label}
+                                />
+                                <Legend />
+                                <Bar dataKey="amountPercent" name="Sales Achievement %">
+                                  {territoryData.map((entry, index) => (
+                                    <Cell 
+                                      key={`cell-${index}`} 
+                                      fill={entry.amountPercent >= 100 ? '#10b981' : entry.amountPercent >= 80 ? '#f59e0b' : '#ef4444'} 
+                                    />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          );
+                        })()}
+                      </div>
+
+                      {/* ABP Quantity Chart */}
+                      <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
+                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Quantity Achievement Percentage by Territory (ABP)</h3>
+                        {(() => {
+                          if (reportData.length === 0) {
+                            return (
+                              <div style={{ padding: '20px', textAlign: 'center' }}>
+                                <p style={{ color: '#6b7280' }}>No data available</p>
+                              </div>
+                            );
+                          }
+
+                          // Calculate average percentage per territory (average of individual dealer percentages)
+                          const territoryMap = {};
+                          reportData.forEach(item => {
+                            const territory = item.territory_name || 'N/A';
+                            const forecastTarget = parseFloat(item.forecast_target) || 0;
+                            const abpQty = parseFloat(item.abp_quantity) || 0;
+                            const achievementQty = parseFloat(item.achievement_quantity) || 0;
+                            
+                            // Only process ABP rows (no forecast override)
+                            if (forecastTarget === 0 && abpQty > 0) {
+                              if (!territoryMap[territory]) {
+                                territoryMap[territory] = { territory: territory, percentages: [] };
+                              }
+                              const dealerPercent = (achievementQty / abpQty) * 100;
+                              territoryMap[territory].percentages.push(dealerPercent);
+                            }
+                          });
+
+                          const territoryData = Object.values(territoryMap)
+                            .filter(t => t.percentages.length > 0)
+                            .map(t => {
+                              const avgPercent = t.percentages.reduce((sum, p) => sum + p, 0) / t.percentages.length;
+                              return {
+                                name: t.territory.length > 15 ? t.territory.substring(0, 15) + '...' : t.territory,
+                                fullName: t.territory,
+                                qtyPercent: parseFloat(avgPercent.toFixed(2))
+                              };
+                            });
+
+                          if (territoryData.length === 0) {
+                            return (
+                              <div style={{ padding: '20px', textAlign: 'center' }}>
+                                <p style={{ color: '#6b7280' }}>No territory data available</p>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <ResponsiveContainer width="100%" height={350}>
+                              <BarChart data={territoryData.sort((a, b) => b.qtyPercent - a.qtyPercent)} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} interval={0} />
+                                <YAxis domain={[0, 120]} />
+                                <Tooltip 
+                                  formatter={(value) => `${parseFloat(value).toFixed(2)}%`}
+                                  labelFormatter={(label, payload) => payload && payload[0] ? payload[0].payload.fullName : label}
+                                />
+                                <Legend />
+                                <Bar dataKey="qtyPercent" name="Quantity Achievement %">
+                                  {territoryData.map((entry, index) => (
+                                    <Cell 
+                                      key={`cell-${index}`} 
+                                      fill={entry.qtyPercent >= 100 ? '#10b981' : entry.qtyPercent >= 80 ? '#f59e0b' : '#ef4444'} 
+                                    />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Forecast vs Achievement Section */}
+            <div>
+              <h2 style={{ fontSize: '22px', fontWeight: '600', marginBottom: '30px', color: '#1f2937', textAlign: 'center' }}>
+                Forecast vs Achievement
+              </h2>
+              {(() => {
+                // Territory-wise average: Calculate percentage for each territory, then average those percentages
+                // Use rows where Forecast target exists
+                const forecastRows = reportData.filter(item => {
+                  const forecastTarget = parseFloat(item.forecast_target) || 0;
+                  return forecastTarget > 0; // Any row with forecast target
+                });
+
+                // Group by territory and calculate percentage for each territory
+                const territoryMap = {};
+                forecastRows.forEach(item => {
+                  const territory = item.territory_name || 'N/A';
+                  if (!territoryMap[territory]) {
+                    territoryMap[territory] = {
+                      totalTarget: 0,
+                      totalAchievement: 0,
+                      totalTargetQty: 0,
+                      totalAchievementQty: 0
+                    };
+                  }
+                  territoryMap[territory].totalTarget += parseFloat(item.forecast_target) || 0;
+                  territoryMap[territory].totalAchievement += parseFloat(item.achievement) || 0;
+                  territoryMap[territory].totalTargetQty += parseFloat(item.forecast_quantity) || 0;
+                  territoryMap[territory].totalAchievementQty += parseFloat(item.achievement_quantity) || 0;
+                });
+
+                // Calculate percentage for each territory, then average
+                const territoryPercentages = Object.values(territoryMap)
+                  .filter(t => t.totalTarget > 0)
+                  .map(t => ({
+                    salesPercent: (t.totalAchievement / t.totalTarget) * 100,
+                    qtyPercent: t.totalTargetQty > 0 ? (t.totalAchievementQty / t.totalTargetQty) * 100 : 0
+                  }));
+
+                const forecastSalesPercent = territoryPercentages.length > 0
+                  ? territoryPercentages.reduce((sum, t) => sum + t.salesPercent, 0) / territoryPercentages.length
+                  : 0;
+
+                const forecastQuantityPercent = territoryPercentages.length > 0
+                  ? territoryPercentages.reduce((sum, t) => sum + t.qtyPercent, 0) / territoryPercentages.length
+                  : 0;
+
+                return (
+                  <>
+                    {/* Forecast Percentage Cards */}
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '40px', marginBottom: '40px', flexWrap: 'wrap' }}>
+                      <div style={{ 
+                        background: 'white', 
+                        padding: '40px 60px', 
+                        borderRadius: '12px', 
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                        border: '2px solid #e5e7eb',
+                        textAlign: 'center',
+                        minWidth: '250px'
+                      }}>
+                        <div style={{ fontSize: '18px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
+                          Sales Achievement %
+                        </div>
+                        <div style={{ 
+                          fontSize: '48px', 
+                          fontWeight: '700', 
+                          color: forecastSalesPercent >= 100 ? '#10b981' : forecastSalesPercent >= 80 ? '#f59e0b' : '#ef4444'
+                        }}>
+                          {formatPercentage(forecastSalesPercent)}
+                        </div>
+                      </div>
+
+                      <div style={{ 
+                        background: 'white', 
+                        padding: '40px 60px', 
+                        borderRadius: '12px', 
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                        border: '2px solid #e5e7eb',
+                        textAlign: 'center',
+                        minWidth: '250px'
+                      }}>
+                        <div style={{ fontSize: '18px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
+                          Quantity Achievement %
+                        </div>
+                        <div style={{ 
+                          fontSize: '48px', 
+                          fontWeight: '700', 
+                          color: forecastQuantityPercent >= 100 ? '#10b981' : forecastQuantityPercent >= 80 ? '#f59e0b' : '#ef4444'
+                        }}>
+                          {formatPercentage(forecastQuantityPercent)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Forecast Charts */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', marginBottom: '30px' }}>
+                      {/* Forecast Sales Chart */}
+                      <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
+                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Sales Achievement Percentage by Territory (Forecast)</h3>
+                        {(() => {
+                          if (reportData.length === 0) {
+                            return (
+                              <div style={{ padding: '20px', textAlign: 'center' }}>
+                                <p style={{ color: '#6b7280' }}>No data available</p>
+                              </div>
+                            );
+                          }
+
+                          // Calculate average percentage per territory (average of individual dealer percentages)
+                          const territoryMap = {};
+                          reportData.forEach(item => {
+                            const territory = item.territory_name || 'N/A';
+                            const forecastTarget = parseFloat(item.forecast_target) || 0;
+                            const achievement = parseFloat(item.achievement) || 0;
+                            
+                            // Only process Forecast rows
+                            if (forecastTarget > 0) {
+                              if (!territoryMap[territory]) {
+                                territoryMap[territory] = { territory: territory, percentages: [], totalTarget: 0, totalAchievement: 0 };
+                              }
+                              const dealerPercent = (achievement / forecastTarget) * 100;
+                              territoryMap[territory].percentages.push(dealerPercent);
+                              territoryMap[territory].totalTarget += forecastTarget;
+                              territoryMap[territory].totalAchievement += achievement;
+                            }
+                          });
+
+                          // Check if there's any Forecast data at all
+                          const hasForecastData = reportData.some(item => parseFloat(item.forecast_target) > 0);
+                          
+                          const territoryData = Object.values(territoryMap)
+                            .filter(t => t.percentages.length > 0)
+                            .map(t => {
+                              const avgPercent = t.percentages.reduce((sum, p) => sum + p, 0) / t.percentages.length;
+                              return {
+                                name: t.territory.length > 15 ? t.territory.substring(0, 15) + '...' : t.territory,
+                                fullName: t.territory,
+                                amountPercent: parseFloat(avgPercent.toFixed(2))
+                              };
+                            });
+
+                          if (territoryData.length === 0) {
+                            return (
+                              <div style={{ padding: '20px', textAlign: 'center' }}>
+                                <p style={{ color: '#6b7280', fontSize: '16px', marginBottom: '10px' }}>
+                                  {hasForecastData 
+                                    ? 'No territory data available for the selected filters'
+                                    : `No Forecast data available for ${selectedMonth ? `Month ${selectedMonth}` : 'the selected month'}. Please select a different month or check if Forecast data has been uploaded.`}
+                                </p>
+                                {selectedMonth && (
+                                  <p style={{ color: '#9ca3af', fontSize: '14px' }}>
+                                    Selected: Year {selectedYear || 'All'}, Month {selectedMonth}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          // Add target and achievement data to territoryData for tooltip
+                          const territoryDataWithDetails = territoryData.map(t => {
+                            const territoryInfo = territoryMap[t.fullName];
+                            return {
+                              ...t,
+                              target: territoryInfo?.totalTarget || 0,
+                              achievement: territoryInfo?.totalAchievement || 0
+                            };
+                          });
+
+                          return (
+                            <ResponsiveContainer width="100%" height={350}>
+                              <BarChart data={territoryDataWithDetails.sort((a, b) => b.amountPercent - a.amountPercent)} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} interval={0} />
+                                <YAxis domain={[0, 120]} />
+                                <Tooltip 
+                                  formatter={(value, name, props) => {
+                                    const percent = parseFloat(value).toFixed(2);
+                                    const target = props.payload?.target || 0;
+                                    const achievement = props.payload?.achievement || 0;
+                                    return [
+                                      `${percent}%`,
+                                      `Target: ${target.toLocaleString()}, Achievement: ${achievement.toLocaleString()}`
+                                    ];
+                                  }}
+                                  labelFormatter={(label, payload) => payload && payload[0] ? payload[0].payload.fullName : label}
+                                />
+                                <Legend />
+                                <Bar dataKey="amountPercent" name="Sales Achievement %" minPointSize={1}>
+                                  {territoryDataWithDetails.map((entry, index) => (
+                                    <Cell 
+                                      key={`cell-${index}`} 
+                                      fill={entry.amountPercent >= 100 ? '#10b981' : entry.amountPercent >= 80 ? '#f59e0b' : '#ef4444'} 
+                                    />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Forecast Quantity Chart */}
+                      <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
+                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Quantity Achievement Percentage by Territory (Forecast)</h3>
+                        {(() => {
+                          if (reportData.length === 0) {
+                            return (
+                              <div style={{ padding: '20px', textAlign: 'center' }}>
+                                <p style={{ color: '#6b7280' }}>No data available</p>
+                              </div>
+                            );
+                          }
+
+                          // Calculate average percentage per territory (average of individual dealer percentages)
+                          const territoryMap = {};
+                          reportData.forEach(item => {
+                            const territory = item.territory_name || 'N/A';
+                            const forecastQty = parseFloat(item.forecast_quantity) || 0;
+                            const achievementQty = parseFloat(item.achievement_quantity) || 0;
+                            
+                            // Only process Forecast rows
+                            if (forecastQty > 0) {
+                              if (!territoryMap[territory]) {
+                                territoryMap[territory] = { territory: territory, percentages: [], totalTargetQty: 0, totalAchievementQty: 0 };
+                              }
+                              const dealerPercent = (achievementQty / forecastQty) * 100;
+                              territoryMap[territory].percentages.push(dealerPercent);
+                              territoryMap[territory].totalTargetQty += forecastQty;
+                              territoryMap[territory].totalAchievementQty += achievementQty;
+                            }
+                          });
+
+                          // Check if there's any Forecast quantity data at all
+                          const hasForecastQtyData = reportData.some(item => parseFloat(item.forecast_quantity) > 0);
+                          
+                          const territoryData = Object.values(territoryMap)
+                            .filter(t => t.percentages.length > 0)
+                            .map(t => {
+                              const avgPercent = t.percentages.reduce((sum, p) => sum + p, 0) / t.percentages.length;
+                              return {
+                                name: t.territory.length > 15 ? t.territory.substring(0, 15) + '...' : t.territory,
+                                fullName: t.territory,
+                                qtyPercent: parseFloat(avgPercent.toFixed(2))
+                              };
+                            });
+
+                          if (territoryData.length === 0) {
+                            return (
+                              <div style={{ padding: '20px', textAlign: 'center' }}>
+                                <p style={{ color: '#6b7280', fontSize: '16px', marginBottom: '10px' }}>
+                                  {hasForecastQtyData 
+                                    ? 'No territory data available for the selected filters'
+                                    : `No Forecast quantity data available for ${selectedMonth ? `Month ${selectedMonth}` : 'the selected month'}. Please select a different month or check if Forecast data has been uploaded.`}
+                                </p>
+                                {selectedMonth && (
+                                  <p style={{ color: '#9ca3af', fontSize: '14px' }}>
+                                    Selected: Year {selectedYear || 'All'}, Month {selectedMonth}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          // Add target and achievement data to territoryData for tooltip
+                          const territoryDataWithDetails = territoryData.map(t => {
+                            const territoryInfo = territoryMap[t.fullName];
+                            return {
+                              ...t,
+                              targetQty: territoryInfo?.totalTargetQty || 0,
+                              achievementQty: territoryInfo?.totalAchievementQty || 0
+                            };
+                          });
+
+                          return (
+                            <ResponsiveContainer width="100%" height={350}>
+                              <BarChart data={territoryDataWithDetails.sort((a, b) => b.qtyPercent - a.qtyPercent)} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} interval={0} />
+                                <YAxis domain={[0, 120]} />
+                                <Tooltip 
+                                  formatter={(value, name, props) => {
+                                    const percent = parseFloat(value).toFixed(2);
+                                    const targetQty = props.payload?.targetQty || 0;
+                                    const achievementQty = props.payload?.achievementQty || 0;
+                                    return [
+                                      `${percent}%`,
+                                      `Target: ${targetQty.toLocaleString()}, Achievement: ${achievementQty.toLocaleString()}`
+                                    ];
+                                  }}
+                                  labelFormatter={(label, payload) => payload && payload[0] ? payload[0].payload.fullName : label}
+                                />
+                                <Legend />
+                                <Bar dataKey="qtyPercent" name="Quantity Achievement %" minPointSize={1}>
+                                  {territoryDataWithDetails.map((entry, index) => (
+                                    <Cell 
+                                      key={`cell-${index}`} 
+                                      fill={entry.qtyPercent >= 100 ? '#10b981' : entry.qtyPercent >= 80 ? '#f59e0b' : '#ef4444'} 
+                                    />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'summary' && (
+        <>
+          {/* View Options */}
+          <div className="view-options" style={{ display: 'flex', gap: '20px', justifyContent: 'center', marginTop: '20px', marginBottom: '40px', flexWrap: 'wrap' }}>
+            <button 
+              className="btn btn-primary"
+              onClick={() => fetchBreakdown('abp')}
+              style={{ padding: '15px 40px', fontSize: '16px', minWidth: '250px' }}
+            >
+              <BarChart3 size={20} style={{ marginRight: '10px', verticalAlign: 'middle' }} />
+              View ABP vs Achievement
+            </button>
+            <button 
+              className="btn btn-primary"
+              onClick={() => fetchBreakdown('forecast')}
+              style={{ padding: '15px 40px', fontSize: '16px', minWidth: '250px' }}
+            >
+              <BarChart3 size={20} style={{ marginRight: '10px', verticalAlign: 'middle' }} />
+              View Forecast vs Achievement
+            </button>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'unit-details' && (
+        <div style={{ marginTop: '20px' }}>
+          <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div className="filter-group">
+              <label>Comparison Type:</label>
+              <select 
+                value={unitComparisonType} 
+                onChange={(e) => {
+                  setUnitComparisonType(e.target.value);
+                  fetchApplicationUnits(e.target.value);
+                  fetchUnitDetails(e.target.value);
+                }}
+              >
+                <option value="abp">ABP vs Achievement</option>
+                <option value="forecast">Forecast vs Achievement</option>
+              </select>
+            </div>
+            <div className="filter-group">
+              <label>Application Unit:</label>
+              <select 
+                value={selectedApplicationUnit} 
+                onChange={(e) => {
+                  setSelectedApplicationUnit(e.target.value);
+                  fetchUnitDetails(unitComparisonType, e.target.value);
+                }}
+              >
+                <option value="all">All Units</option>
+                {availableApplicationUnits.map(unit => (
+                  <option key={unit} value={unit}>{unit}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginLeft: 'auto', fontSize: '14px', color: '#666' }}>
+              {(() => {
+                const territoryData = getUnitDetailsTerritoryGroupedData();
+                const totalItems = territoryData.reduce((sum, t) => sum + t.itemCount, 0);
+                return `${territoryData.length} territories, ${totalItems} records`;
+              })()}
+            </div>
+          </div>
+          
+          {unitDetailsLoading ? (
+            <div className="loading">Loading unit details...</div>
+          ) : unitDetailsData.length === 0 ? (
+            <div className="no-data">No unit details available for selected filters.</div>
+          ) : (
+            <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh' }}>
+              <table className="report-table" style={{ fontSize: '14px' }}>
+                <thead style={{ position: 'sticky', top: 0, background: '#f9fafb', zIndex: 10 }}>
+                  <tr>
+                    <th style={{ width: '40px' }}></th>
+                    <th>Territory / Dealer</th>
+                    <th>Application Unit</th>
+                    <th>Target Qty</th>
+                    <th>Achievement Qty</th>
+                    <th>Qty Gap</th>
+                    <th>Qty %</th>
+                    <th>Target Amount</th>
+                    <th>Achievement</th>
+                    <th>Amount Gap</th>
+                    <th>Amount %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {getUnitDetailsTerritoryGroupedData().map((territory, territoryIndex) => {
+                    const isTerritoryExpanded = expandedUnitTerritories.has(territory.territoryName);
+                    
+                    return (
+                      <React.Fragment key={`unit-territory-${territoryIndex}`}>
+                        {/* Territory Row */}
+                        <tr
+                          style={{ 
+                            cursor: 'pointer',
+                            backgroundColor: '#e0e7ff',
+                            fontWeight: '600'
+                          }}
+                          onClick={() => toggleUnitTerritory(territory.territoryName)}
+                          className="territory-row"
+                        >
+                          <td>{isTerritoryExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</td>
+                          <td colSpan="2">
+                            <strong>{territory.territoryName}</strong>
+                            <span style={{ marginLeft: '12px', fontSize: '12px', fontWeight: 'normal', color: '#6b7280' }}>
+                              ({territory.itemCount} records, {territory.uniqueUnits} units)
+                            </span>
+                          </td>
+                          <td>{territory.totalTargetQty.toLocaleString()}</td>
+                          <td>{territory.totalAchievementQty.toLocaleString()}</td>
+                          <td style={{ color: territory.totalQtyGap < 0 ? '#ef4444' : '#10b981', fontWeight: '600' }}>
+                            {territory.totalQtyGap.toLocaleString()}
+                          </td>
+                          <td>
+                            <span className={territory.qtyPercent >= 100 ? 'positive' : territory.qtyPercent >= 80 ? 'warning' : 'negative'}>
+                              {territory.qtyPercent.toFixed(2)}%
+                            </span>
+                          </td>
+                          <td>{territory.totalTargetAmount.toLocaleString()}</td>
+                          <td>{territory.totalAchievementAmount.toLocaleString()}</td>
+                          <td style={{ color: territory.totalAmountGap < 0 ? '#ef4444' : '#10b981', fontWeight: '600' }}>
+                            {territory.totalAmountGap.toLocaleString()}
+                          </td>
+                          <td>
+                            <span className={territory.amountPercent >= 100 ? 'positive' : territory.amountPercent >= 80 ? 'warning' : 'negative'}>
+                              {territory.amountPercent.toFixed(2)}%
+                            </span>
+                          </td>
+                        </tr>
+                        
+                        {/* Items under Territory (when expanded) */}
+                        {isTerritoryExpanded && territory.items.map((row, itemIndex) => (
+                          <tr key={`unit-item-${territoryIndex}-${itemIndex}`} style={{ backgroundColor: '#f9fafb' }}>
+                            <td></td>
+                            <td>
+                              <div style={{ paddingLeft: '10px' }}>
+                                <strong>{row.dealer_code}</strong>
+                                <span style={{ marginLeft: '8px', color: '#6b7280' }}>{row.dealer_name}</span>
+                              </div>
+                            </td>
+                            <td>{row.application_unit}</td>
+                            <td>{row.target_qty?.toLocaleString() || 0}</td>
+                            <td>{row.achievement_qty?.toLocaleString() || 0}</td>
+                            <td style={{ color: row.qty_gap < 0 ? '#ef4444' : '#10b981' }}>
+                              {row.qty_gap?.toLocaleString() || 0}
+                            </td>
+                            <td>{typeof row.qty_percentage === 'number' ? row.qty_percentage.toFixed(2) : (parseFloat(row.qty_percentage) || 0).toFixed(2)}%</td>
+                            <td>{row.target_amount?.toLocaleString() || 0}</td>
+                            <td>{row.achievement_amount?.toLocaleString() || 0}</td>
+                            <td style={{ color: row.amount_gap < 0 ? '#ef4444' : '#10b981' }}>
+                              {row.amount_gap?.toLocaleString() || 0}
+                            </td>
+                            <td>{typeof row.amount_percentage === 'number' ? row.amount_percentage.toFixed(2) : (parseFloat(row.amount_percentage) || 0).toFixed(2)}%</td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Breakdown (inline, no popup) - Only show in Summary tab */}
+      {activeTab === 'summary' && breakdownType && (
         <div style={{ marginTop: '10px', marginBottom: '30px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <h2 style={{ margin: 0, fontSize: '18px' }}>
@@ -753,6 +1704,7 @@ const TargetVsAchievement = () => {
                       <th>Amount %</th>
                       <th>Target Qty</th>
                       <th>Achievement Qty</th>
+                      <th>Quantity Gap</th>
                       <th>Quantity %</th>
                       <th>Status</th>
                     </tr>
@@ -799,6 +1751,7 @@ const TargetVsAchievement = () => {
                             </td>
                             <td>{formatCurrency(territory.totalTargetQty)}</td>
                             <td>{formatCurrency(territory.totalAchievementQty)}</td>
+                            <td style={{ color: '#999', fontStyle: 'italic' }}>-</td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span className={territory.avgQtyPercent >= 100 ? 'positive' : territory.avgQtyPercent >= 80 ? 'warning' : 'negative'}>
@@ -837,6 +1790,7 @@ const TargetVsAchievement = () => {
                             const amountPercentage = item.amount_percentage || 0;
                             const targetQuantity = breakdownType === 'abp' ? (item.abp_target_quantity || 0) : (item.forecast_target_quantity || 0);
                             const achievementQuantity = item.achievement_quantity || 0;
+                            const quantityGap = targetQuantity - achievementQuantity;
                             const quantityPercentage = item.quantity_percentage || 0;
                             const details = dealerDetails[dealerKey];
 
@@ -873,6 +1827,18 @@ const TargetVsAchievement = () => {
                                   <td>{targetQuantity > 0 ? targetQuantity.toLocaleString() : <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>}</td>
                                   <td>{achievementQuantity > 0 ? achievementQuantity.toLocaleString() : <span style={{ color: '#999', fontStyle: 'italic' }}>No sales</span>}</td>
                                   <td>
+                                    {targetQuantity > 0 ? (
+                                      <span style={{ 
+                                        color: quantityGap >= 0 ? '#ef4444' : '#10b981',
+                                        fontWeight: '600'
+                                      }}>
+                                        {quantityGap >= 0 ? '-' : '+'}{Math.abs(quantityGap).toLocaleString()}
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>
+                                    )}
+                                  </td>
+                                  <td>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                       <span className={quantityPercentage >= 100 ? 'positive' : quantityPercentage >= 80 ? 'warning' : 'negative'}>
                                         {formatPercentage(quantityPercentage)}
@@ -903,7 +1869,7 @@ const TargetVsAchievement = () => {
 
                                 {isExpanded && (
                                   <tr>
-                                    <td colSpan="10" style={{ padding: '20px', background: '#f3f4f6' }}>
+                                    <td colSpan="11" style={{ padding: '20px', background: '#f3f4f6' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                   {/* Summary Cards */}
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
@@ -917,6 +1883,12 @@ const TargetVsAchievement = () => {
                                       <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Achievement Quantity</div>
                                       <div style={{ fontSize: '18px', fontWeight: '600' }}>
                                         {formatCurrency(item.achievement_quantity || 0)}
+                                      </div>
+                                    </div>
+                                    <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Quantity Gap</div>
+                                      <div style={{ fontSize: '18px', fontWeight: '600', color: quantityGap >= 0 ? '#ef4444' : '#10b981' }}>
+                                        {quantityGap >= 0 ? '-' : '+'}{formatCurrency(Math.abs(quantityGap))}
                                       </div>
                                     </div>
                                     <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>

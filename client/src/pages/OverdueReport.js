@@ -18,8 +18,15 @@ const OverdueReport = () => {
   const [lowerLimit, setLowerLimit] = useState('');
   const [upperLimit, setUpperLimit] = useState('');
   const [updateStatus, setUpdateStatus] = useState(null);
-  const [uploadStatus, setUploadStatus] = useState(null);
-  const [uploadFile, setUploadFile] = useState(null);
+  const [balanceUploadStatus, setBalanceUploadStatus] = useState(null);
+  const [balanceUploadFile, setBalanceUploadFile] = useState(null);
+  const [salesUploadStatus, setSalesUploadStatus] = useState(null);
+  const [salesUploadFile, setSalesUploadFile] = useState(null);
+  const [collectionUploadStatus, setCollectionUploadStatus] = useState(null);
+  const [collectionUploadFile, setCollectionUploadFile] = useState(null);
+  const [calculateBalanceStatus, setCalculateBalanceStatus] = useState(null);
+  const [balanceStartDate, setBalanceStartDate] = useState('');
+  const [balanceEndDate, setBalanceEndDate] = useState('');
   const [latestDate, setLatestDate] = useState(null);
   
   // Filters
@@ -240,38 +247,56 @@ const OverdueReport = () => {
     }
   };
 
-  // Handle file upload
-  const handleFileChange = (e) => {
+  // Handle balance file upload
+  const handleBalanceFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setUploadFile(file);
-      setUploadStatus(null);
+      setBalanceUploadFile(file);
+      setBalanceUploadStatus(null);
     }
   };
 
-  // Upload overdue report
-  const handleUpload = async () => {
-    if (!uploadFile) {
-      setUploadStatus({ success: false, message: 'Please select a file to upload' });
+  // Handle sales file upload
+  const handleSalesFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setSalesUploadFile(file);
+      setSalesUploadStatus(null);
+    }
+  };
+
+  // Handle collection file upload
+  const handleCollectionFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setCollectionUploadFile(file);
+      setCollectionUploadStatus(null);
+    }
+  };
+
+  // Upload opening/closing balance
+  const handleBalanceUpload = async () => {
+    if (!balanceUploadFile) {
+      setBalanceUploadStatus({ success: false, message: 'Please select a file to upload' });
       return;
     }
 
     const formData = new FormData();
-    formData.append('file', uploadFile);
+    formData.append('file', balanceUploadFile);
 
     setLoading(true);
-    setUploadStatus(null);
+    setBalanceUploadStatus(null);
 
     try {
-      const response = await axios.post('/api/overdue/upload', formData, {
+      const response = await axios.post('/api/overdue/upload-balance', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
       });
 
-      setUploadStatus({
+      setBalanceUploadStatus({
         success: true,
-        message: response.data.message || 'File uploaded successfully',
+        message: response.data.message || 'Opening/Closing balance uploaded successfully',
         summary: response.data.summary,
         missingDealers: response.data.missing_dealers || [],
         warning: response.data.warning,
@@ -282,19 +307,156 @@ const OverdueReport = () => {
       fetchReport();
 
       // Clear file input
-      setUploadFile(null);
-      const fileInput = document.querySelector('input[type="file"]');
+      setBalanceUploadFile(null);
+      const fileInput = document.querySelector('input[type="file"][name="balance-file"]');
       if (fileInput) fileInput.value = '';
 
-      // Clear status after 30 seconds (longer timeout to allow viewing missing dealers)
+      // Clear status after 30 seconds
       setTimeout(() => {
-        setUploadStatus(null);
+        setBalanceUploadStatus(null);
       }, 30000);
     } catch (error) {
-      console.error('Error uploading file:', error);
-      setUploadStatus({
+      console.error('Error uploading balance file:', error);
+      setBalanceUploadStatus({
         success: false,
         message: error.response?.data?.error || 'Failed to upload file',
+        details: error.response?.data?.details || error.message
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Upload daily sales
+  const handleSalesUpload = async () => {
+    if (!salesUploadFile) {
+      setSalesUploadStatus({ success: false, message: 'Please select a file to upload' });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', salesUploadFile);
+
+    setLoading(true);
+    setSalesUploadStatus(null);
+
+    try {
+      const response = await axios.post('/api/targets/sales/daily-upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      setSalesUploadStatus({
+        success: true,
+        message: response.data.message || 'Daily sales uploaded successfully',
+        summary: response.data.summary,
+        warning: response.data.warning
+      });
+
+      // Clear file input
+      setSalesUploadFile(null);
+      const fileInput = document.querySelector('input[type="file"][name="sales-file"]');
+      if (fileInput) fileInput.value = '';
+
+      // Clear status after 10 seconds
+      setTimeout(() => {
+        setSalesUploadStatus(null);
+      }, 10000);
+    } catch (error) {
+      console.error('Error uploading sales file:', error);
+      setSalesUploadStatus({
+        success: false,
+        message: error.response?.data?.error || 'Failed to upload file',
+        details: error.response?.data?.details || error.message
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Upload daily collections
+  const handleCollectionUpload = async () => {
+    if (!collectionUploadFile) {
+      setCollectionUploadStatus({ success: false, message: 'Please select a file to upload' });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', collectionUploadFile);
+
+    setLoading(true);
+    setCollectionUploadStatus(null);
+
+    try {
+      const response = await axios.post('/api/overdue/collections/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      setCollectionUploadStatus({
+        success: true,
+        message: response.data.message || 'Daily collections uploaded successfully',
+        summary: response.data.summary,
+        warning: response.data.warning
+      });
+
+      // Clear file input
+      setCollectionUploadFile(null);
+      const fileInput = document.querySelector('input[type="file"][name="collection-file"]');
+      if (fileInput) fileInput.value = '';
+
+      // Clear status after 10 seconds
+      setTimeout(() => {
+        setCollectionUploadStatus(null);
+      }, 10000);
+    } catch (error) {
+      console.error('Error uploading collection file:', error);
+      setCollectionUploadStatus({
+        success: false,
+        message: error.response?.data?.error || 'Failed to upload file',
+        details: error.response?.data?.details || error.message
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Calculate closing balance
+  const handleCalculateBalance = async () => {
+    if (!balanceStartDate || !balanceEndDate) {
+      setCalculateBalanceStatus({ success: false, message: 'Please select start date and end date' });
+      return;
+    }
+
+    setLoading(true);
+    setCalculateBalanceStatus(null);
+
+    try {
+      const response = await axios.post('/api/overdue/calculate-balance', {
+        startDate: balanceStartDate,
+        endDate: balanceEndDate
+      });
+
+      setCalculateBalanceStatus({
+        success: true,
+        message: response.data.message || 'Closing balance calculated successfully',
+        summary: response.data.summary
+      });
+
+      // Refresh report after calculation
+      fetchReport();
+
+      // Clear status after 10 seconds
+      setTimeout(() => {
+        setCalculateBalanceStatus(null);
+      }, 10000);
+    } catch (error) {
+      console.error('Error calculating balance:', error);
+      setCalculateBalanceStatus({
+        success: false,
+        message: error.response?.data?.error || 'Failed to calculate closing balance',
         details: error.response?.data?.details || error.message
       });
     } finally {
@@ -365,6 +527,17 @@ const OverdueReport = () => {
             <p className="stat-value">{summary.total_dealers || 0}</p>
           </div>
         </div>
+        {summary.close_to_lower_limit_last_week_count > 0 && (
+          <div className="stat-card" style={{ backgroundColor: '#fef3c7', borderColor: '#fbbf24' }}>
+            <div className="stat-icon" style={{ backgroundColor: '#fbbf24', color: '#92400e' }}>
+              <AlertCircle size={24} />
+            </div>
+            <div className="stat-content">
+              <h3>Close to Lower Limit (Last Week)</h3>
+              <p className="stat-value" style={{ color: '#92400e' }}>{summary.close_to_lower_limit_last_week_count || 0} dealers</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action Bar */}
@@ -376,26 +549,83 @@ const OverdueReport = () => {
           >
             <Save size={18} /> Set Limits
           </button>
-          <div className="upload-container">
+          <div className="upload-container" style={{ marginLeft: '15px' }}>
             <input
               type="file"
+              name="balance-file"
               accept=".xlsx,.xls"
-              onChange={handleFileChange}
-              id="overdue-upload-input"
+              onChange={handleBalanceFileChange}
+              id="balance-upload-input"
               style={{ display: 'none' }}
             />
-            <label htmlFor="overdue-upload-input" className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
-              <Upload size={18} /> Upload Report
+            <label htmlFor="balance-upload-input" className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
+              <Upload size={18} /> Upload Balance
             </label>
-            {uploadFile && (
-              <span style={{ marginLeft: '10px', fontSize: '14px', color: '#6b7280' }}>
-                {uploadFile.name}
+            {balanceUploadFile && (
+              <span style={{ marginLeft: '10px', fontSize: '10px', color: '#6b7280' }}>
+                {balanceUploadFile.name}
               </span>
             )}
-            {uploadFile && (
+            {balanceUploadFile && (
               <button 
                 className="btn btn-primary"
-                onClick={handleUpload}
+                onClick={handleBalanceUpload}
+                disabled={loading}
+                style={{ marginLeft: '10px' }}
+              >
+                {loading ? 'Uploading...' : 'Submit'}
+              </button>
+            )}
+          </div>
+          <div className="upload-container" style={{ marginLeft: '15px' }}>
+            <input
+              type="file"
+              name="sales-file"
+              accept=".xlsx,.xls"
+              onChange={handleSalesFileChange}
+              id="sales-upload-input"
+              style={{ display: 'none' }}
+            />
+            <label htmlFor="sales-upload-input" className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
+              <Upload size={18} /> Upload Sales
+            </label>
+            {salesUploadFile && (
+              <span style={{ marginLeft: '10px', fontSize: '10px', color: '#6b7280' }}>
+                {salesUploadFile.name}
+              </span>
+            )}
+            {salesUploadFile && (
+              <button 
+                className="btn btn-primary"
+                onClick={handleSalesUpload}
+                disabled={loading}
+                style={{ marginLeft: '10px' }}
+              >
+                {loading ? 'Uploading...' : 'Submit'}
+              </button>
+            )}
+          </div>
+          <div className="upload-container" style={{ marginLeft: '15px' }}>
+            <input
+              type="file"
+              name="collection-file"
+              accept=".xlsx,.xls"
+              onChange={handleCollectionFileChange}
+              id="collection-upload-input"
+              style={{ display: 'none' }}
+            />
+            <label htmlFor="collection-upload-input" className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
+              <Upload size={18} /> Upload Collection
+            </label>
+            {collectionUploadFile && (
+              <span style={{ marginLeft: '10px', fontSize: '10px', color: '#6b7280' }}>
+                {collectionUploadFile.name}
+              </span>
+            )}
+            {collectionUploadFile && (
+              <button 
+                className="btn btn-primary"
+                onClick={handleCollectionUpload}
                 disabled={loading}
                 style={{ marginLeft: '10px' }}
               >
@@ -410,6 +640,30 @@ const OverdueReport = () => {
           >
             <Download size={18} /> Export Excel
           </button>
+          <div style={{ marginLeft: '15px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <input
+              type="date"
+              value={balanceStartDate}
+              onChange={(e) => setBalanceStartDate(e.target.value)}
+              placeholder="Start Date"
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+            />
+            <span>to</span>
+            <input
+              type="date"
+              value={balanceEndDate}
+              onChange={(e) => setBalanceEndDate(e.target.value)}
+              placeholder="End Date"
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+            />
+            <button 
+              className="btn btn-primary"
+              onClick={handleCalculateBalance}
+              disabled={loading || !balanceStartDate || !balanceEndDate}
+            >
+              <RefreshCw size={18} /> Calculate Balance
+            </button>
+          </div>
         </div>
         <div className="action-right">
           <div className="search-box">
@@ -424,45 +678,46 @@ const OverdueReport = () => {
         </div>
       </div>
 
-      {/* Upload Status */}
-      {uploadStatus && (
-        <div className={`upload-status ${uploadStatus.success ? 'success' : 'error'}`} style={{
+
+      {/* Balance Upload Status */}
+      {balanceUploadStatus && (
+        <div className={`upload-status ${balanceUploadStatus.success ? 'success' : 'error'}`} style={{
           padding: '15px',
           marginBottom: '20px',
           borderRadius: '8px',
-          backgroundColor: uploadStatus.success ? '#d1fae5' : '#fee2e2',
-          color: uploadStatus.success ? '#065f46' : '#991b1b'
+          backgroundColor: balanceUploadStatus.success ? '#d1fae5' : '#fee2e2',
+          color: balanceUploadStatus.success ? '#065f46' : '#991b1b'
         }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>{uploadStatus.message}</div>
-          {uploadStatus.summary && (
-            <div style={{ fontSize: '14px', marginTop: '8px' }}>
-              <div>Total Records: {uploadStatus.summary.total_records}</div>
-              <div>Success: {uploadStatus.summary.success_count} | Errors: {uploadStatus.summary.error_count}</div>
-              {uploadStatus.summary.missing_dealers_count > 0 && (
+          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>Opening/Closing Balance: {balanceUploadStatus.message}</div>
+          {balanceUploadStatus.summary && (
+            <div style={{ fontSize: '10px', marginTop: '8px' }}>
+              <div>Total Records: {balanceUploadStatus.summary.total_records}</div>
+              <div>Success: {balanceUploadStatus.summary.success_count} | Errors: {balanceUploadStatus.summary.error_count}</div>
+              {balanceUploadStatus.summary.missing_dealers_count > 0 && (
                 <div style={{ marginTop: '10px' }}>
                   <div style={{ color: '#d97706', fontWeight: 'bold', marginBottom: '5px' }}>
-                    Missing Dealers: {uploadStatus.summary.missing_dealers_count}
+                    Missing Dealers: {balanceUploadStatus.summary.missing_dealers_count}
                   </div>
-                  {uploadStatus.warning && (
-                    <div style={{ color: '#d97706', fontSize: '13px', marginBottom: '8px', fontStyle: 'italic' }}>
-                      {uploadStatus.warning}
+                  {balanceUploadStatus.warning && (
+                    <div style={{ color: '#d97706', fontSize: '11px', marginBottom: '8px', fontStyle: 'italic' }}>
+                      {balanceUploadStatus.warning}
                     </div>
                   )}
-                  {uploadStatus.suggestion && (
-                    <div style={{ color: '#6b7280', fontSize: '12px', marginBottom: '8px' }}>
-                      {uploadStatus.suggestion}
+                  {balanceUploadStatus.suggestion && (
+                    <div style={{ color: '#6b7280', fontSize: '10px', marginBottom: '8px' }}>
+                      {balanceUploadStatus.suggestion}
                     </div>
                   )}
-                  {uploadStatus.missingDealers && uploadStatus.missingDealers.length > 0 && (
+                  {balanceUploadStatus.missingDealers && balanceUploadStatus.missingDealers.length > 0 && (
                     <details style={{ marginTop: '8px' }}>
                       <summary style={{ 
                         cursor: 'pointer', 
                         color: '#d97706', 
                         fontWeight: '500',
-                        fontSize: '13px',
+                        fontSize: '11px',
                         userSelect: 'none'
                       }}>
-                        Click to view missing dealer codes ({uploadStatus.missingDealers.length})
+                        Click to view missing dealer codes ({balanceUploadStatus.missingDealers.length})
                       </summary>
                       <div style={{ 
                         marginTop: '8px', 
@@ -471,7 +726,7 @@ const OverdueReport = () => {
                         borderRadius: '6px',
                         maxHeight: '200px',
                         overflowY: 'auto',
-                        fontSize: '12px',
+                        fontSize: '10px',
                         fontFamily: 'monospace'
                       }}>
                         <div style={{ 
@@ -479,7 +734,7 @@ const OverdueReport = () => {
                           gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', 
                           gap: '5px' 
                         }}>
-                          {uploadStatus.missingDealers.map((code, idx) => (
+                          {balanceUploadStatus.missingDealers.map((code, idx) => (
                             <div key={idx} style={{ 
                               padding: '4px 8px', 
                               backgroundColor: 'white', 
@@ -497,9 +752,95 @@ const OverdueReport = () => {
               )}
             </div>
           )}
-          {uploadStatus.details && (
-            <div style={{ fontSize: '12px', marginTop: '5px', fontStyle: 'italic' }}>
-              {uploadStatus.details}
+          {balanceUploadStatus.details && (
+            <div style={{ fontSize: '10px', marginTop: '5px', fontStyle: 'italic' }}>
+              {balanceUploadStatus.details}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Sales Upload Status */}
+      {salesUploadStatus && (
+        <div className={`upload-status ${salesUploadStatus.success ? 'success' : 'error'}`} style={{
+          padding: '15px',
+          marginBottom: '20px',
+          borderRadius: '8px',
+          backgroundColor: salesUploadStatus.success ? '#d1fae5' : '#fee2e2',
+          color: salesUploadStatus.success ? '#065f46' : '#991b1b'
+        }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>Daily Sales: {salesUploadStatus.message}</div>
+          {salesUploadStatus.summary && (
+            <div style={{ fontSize: '10px', marginTop: '8px' }}>
+              <div>Total Transactions: {salesUploadStatus.summary.total_transactions}</div>
+              <div>Unique Daily Records: {salesUploadStatus.summary.unique_daily_records}</div>
+              <div>Dealers: {salesUploadStatus.summary.dealers}</div>
+              {salesUploadStatus.summary.date_range && (
+                <div>Date Range: {salesUploadStatus.summary.date_range.from} to {salesUploadStatus.summary.date_range.to}</div>
+              )}
+            </div>
+          )}
+          {salesUploadStatus.details && (
+            <div style={{ fontSize: '10px', marginTop: '5px', fontStyle: 'italic' }}>
+              {salesUploadStatus.details}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Collection Upload Status */}
+      {collectionUploadStatus && (
+        <div className={`upload-status ${collectionUploadStatus.success ? 'success' : 'error'}`} style={{
+          padding: '15px',
+          marginBottom: '20px',
+          borderRadius: '8px',
+          backgroundColor: collectionUploadStatus.success ? '#d1fae5' : '#fee2e2',
+          color: collectionUploadStatus.success ? '#065f46' : '#991b1b'
+        }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>Daily Collections: {collectionUploadStatus.message}</div>
+          {collectionUploadStatus.summary && (
+            <div style={{ fontSize: '10px', marginTop: '8px' }}>
+              <div>Total Transactions: {collectionUploadStatus.summary.total_transactions}</div>
+              <div>Unique Daily Records: {collectionUploadStatus.summary.unique_daily_records}</div>
+              <div>Dealers: {collectionUploadStatus.summary.dealers}</div>
+              {collectionUploadStatus.summary.date_range && (
+                <div>Date Range: {collectionUploadStatus.summary.date_range.from} to {collectionUploadStatus.summary.date_range.to}</div>
+              )}
+            </div>
+          )}
+          {collectionUploadStatus.details && (
+            <div style={{ fontSize: '10px', marginTop: '5px', fontStyle: 'italic' }}>
+              {collectionUploadStatus.details}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Calculate Balance Status */}
+      {calculateBalanceStatus && (
+        <div className={`upload-status ${calculateBalanceStatus.success ? 'success' : 'error'}`} style={{
+          padding: '15px',
+          marginBottom: '20px',
+          borderRadius: '8px',
+          backgroundColor: calculateBalanceStatus.success ? '#d1fae5' : '#fee2e2',
+          color: calculateBalanceStatus.success ? '#065f46' : '#991b1b'
+        }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>Balance Calculation: {calculateBalanceStatus.message}</div>
+          {calculateBalanceStatus.summary && (
+            <div style={{ fontSize: '10px', marginTop: '8px' }}>
+              <div>Total Dealers: {calculateBalanceStatus.summary.total_dealers}</div>
+              <div>Processed: {calculateBalanceStatus.summary.processed}</div>
+              {calculateBalanceStatus.summary.errors > 0 && (
+                <div style={{ color: '#d97706' }}>Errors: {calculateBalanceStatus.summary.errors}</div>
+              )}
+              {calculateBalanceStatus.summary.date_range && (
+                <div>Date Range: {calculateBalanceStatus.summary.date_range.from} to {calculateBalanceStatus.summary.date_range.to}</div>
+              )}
+            </div>
+          )}
+          {calculateBalanceStatus.details && (
+            <div style={{ fontSize: '10px', marginTop: '5px', fontStyle: 'italic' }}>
+              {calculateBalanceStatus.details}
             </div>
           )}
         </div>
@@ -568,6 +909,7 @@ const OverdueReport = () => {
                 <th>Achievement</th>
                 <th>Lower Limit Overdue</th>
                 <th>Upper Limit Overdue</th>
+                <th>Close to Lower Limit (Last Week)</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -590,6 +932,23 @@ const OverdueReport = () => {
                     </td>
                     <td className={item.upper_limit_overdue > 0 ? 'overdue' : ''}>
                       {formatCurrency(item.upper_limit_overdue)}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {item.close_to_lower_limit_last_week ? (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 8px',
+                          backgroundColor: '#fef3c7',
+                          color: '#92400e',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: '600'
+                        }}>
+                          ⚠️ Close
+                        </span>
+                      ) : (
+                        <span style={{ color: '#9ca3af', fontSize: '12px' }}>—</span>
+                      )}
                     </td>
                     <td className="actions-cell">
                       <button 

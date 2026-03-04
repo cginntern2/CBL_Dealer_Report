@@ -7,6 +7,7 @@ import DelinquentDealers from './pages/DelinquentDealers';
 import TargetVsAchievement from './pages/TargetVsAchievement';
 import OverdueReport from './pages/OverdueReport';
 import CreditDays from './pages/CreditDays';
+import BillingCycles from './pages/BillingCycles';
 import './App.css';
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
             <Route path="/overdue" element={<OverdueReport />} />
             <Route path="/credit-days" element={<CreditDays />} />
             <Route path="/delinquent-dealers" element={<DelinquentDealers />} />
+            <Route path="/billing-cycles" element={<BillingCycles />} />
           </Routes>
         </main>
       </div>

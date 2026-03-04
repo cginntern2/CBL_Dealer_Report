@@ -1,9 +1,29 @@
 .overdue-report {
-  padding: 20px;
+  padding: 1rem 1.25rem;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+@media (max-width: 1024px) {
+  .overdue-report {
+    padding: 0.875rem 1rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .overdue-report {
+    padding: 0.75rem;
+  }
 }
 
 .page-header {
-  margin-bottom: 30px;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    margin-bottom: 1.25rem;
+  }
 }
 
 .header-content h1 {
@@ -26,7 +46,7 @@
   padding: 10px 16px;
   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: #ffffff;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
@@ -41,8 +61,15 @@
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 20px;
-  margin-bottom: 30px;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .stats-grid {
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
 }
 
 .stat-card {
@@ -81,20 +108,20 @@
 
 .stat-content h3 {
   margin: 0 0 5px 0;
-  font-size: 14px;
+  font-size: 10px;
   color: #6b7280;
 }
 
 .stat-value {
   margin: 0;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: bold;
   color: #1f2937;
 }
 
 .stat-amount {
   margin: 5px 0 0 0;
-  font-size: 16px;
+  font-size: 10px;
   color: #6b7280;
 }
 
@@ -102,7 +129,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 1.25rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .search-box {
@@ -118,17 +147,25 @@
 .search-box input {
   border: none;
   outline: none;
-  font-size: 14px;
+  font-size: 10px;
 }
 
 .filters-bar {
   display: flex;
-  gap: 20px;
-  margin-bottom: 20px;
-  padding: 15px;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding: 0.875rem;
   background: white;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .filters-bar {
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
 }
 
 .filter-group {
@@ -141,7 +178,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 14px;
+  font-size: 10px;
   color: #6b7280;
 }
 
@@ -150,7 +187,7 @@
   padding: 8px 12px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 10px;
 }
 
 .table-container {
@@ -272,14 +309,14 @@
   padding: 10px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 10px;
 }
 
 .edit-form small {
   display: block;
   margin-top: 5px;
   color: #6b7280;
-  font-size: 12px;
+  font-size: 10px;
 }
 
 .update-status {
@@ -310,7 +347,7 @@
   padding: 10px 20px;
   border: none;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 500;
   cursor: pointer;
   display: flex;
@@ -365,7 +402,7 @@
   padding: 10px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 10px;
 }
 
 .dealer-search-results {

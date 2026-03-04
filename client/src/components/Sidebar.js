@@ -7,6 +7,7 @@ import {
   Clock, 
   CreditCard, 
   AlertCircle,
+  Calendar,
   ChevronLeft 
 } from 'lucide-react';
 import './Sidebar.css';
@@ -22,6 +23,7 @@ const Sidebar = () => {
     { path: '/overdue', label: 'Overdue Report', icon: Clock },
     { path: '/credit-days', label: 'Credit Days', icon: CreditCard },
     { path: '/delinquent-dealers', label: 'Delinquent Dealers', icon: AlertCircle },
+    { path: '/billing-cycles', label: 'Billing Cycles', icon: Calendar },
   ];
 
   return (
