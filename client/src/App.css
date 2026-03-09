@@ -1,12 +1,13 @@
 .app {
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
   background-color: #ffffff;
 }
 
 .main-content {
   flex: 1;
-  padding: 12px 16px;
+  padding: 80px 16px 24px 16px;
   background-color: #ffffff;
   min-height: 100vh;
   max-width: 100%;
@@ -20,18 +21,18 @@
 .page-content h1 {
   color: #1e3a8a;
   margin-bottom: 20px;
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 600;
 }
 
 .page-content p {
   color: #64748b;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 @media (max-width: 768px) {
   .main-content {
-    padding: 10px 12px;
+    padding: 70px 12px 20px 12px;
   }
   
   .page-content {
@@ -41,8 +42,6 @@
 
 @media (max-width: 1024px) {
   .main-content {
-    padding: 14px 16px;
+    padding: 75px 16px 24px 16px;
   }
 }
-
-

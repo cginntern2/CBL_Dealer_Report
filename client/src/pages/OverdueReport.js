@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
 import { Search, X, Edit2, AlertCircle, TrendingDown, TrendingUp, Calendar, Filter, Save, Download, Upload, RefreshCw } from 'lucide-react';
 import './OverdueReport.css';
 
 const OverdueReport = () => {
+  const { user, hasRole, hasPermission } = useAuth();
   const [reportData, setReportData] = useState([]);
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(false);
@@ -543,13 +545,18 @@ const OverdueReport = () => {
       {/* Action Bar */}
       <div className="action-bar">
         <div className="action-left">
-          <button 
-            className="btn btn-primary"
-            onClick={handleOpenSetLimits}
-          >
-            <Save size={18} /> Set Limits
-          </button>
-          <div className="upload-container" style={{ marginLeft: '15px' }}>
+          {/* Set Limits - Admin, Sales Official, Sales Manager only */}
+          {(hasRole('admin') || hasRole('sales_official') || hasRole('sales_manager')) && (
+            <button 
+              className="btn btn-primary"
+              onClick={handleOpenSetLimits}
+            >
+              <Save size={18} /> Set Limits
+            </button>
+          )}
+          {/* Upload Balance - Sales Manager, Sales Official, Admin only */}
+          {(hasRole('admin') || hasRole('sales_official') || hasRole('sales_manager')) && (
+            <div className="upload-container" style={{ marginLeft: '15px' }}>
             <input
               type="file"
               name="balance-file"
@@ -577,46 +584,52 @@ const OverdueReport = () => {
               </button>
             )}
           </div>
-          <div className="upload-container" style={{ marginLeft: '15px' }}>
-            <input
-              type="file"
-              name="sales-file"
-              accept=".xlsx,.xls"
-              onChange={handleSalesFileChange}
-              id="sales-upload-input"
-              style={{ display: 'none' }}
-            />
-            <label htmlFor="sales-upload-input" className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
-              <Upload size={18} /> Upload Sales
-            </label>
-            {salesUploadFile && (
-              <span style={{ marginLeft: '10px', fontSize: '10px', color: '#6b7280' }}>
-                {salesUploadFile.name}
-              </span>
-            )}
-            {salesUploadFile && (
-              <button 
-                className="btn btn-primary"
-                onClick={handleSalesUpload}
-                disabled={loading}
-                style={{ marginLeft: '10px' }}
-              >
-                {loading ? 'Uploading...' : 'Submit'}
-              </button>
-            )}
-          </div>
-          <div className="upload-container" style={{ marginLeft: '15px' }}>
-            <input
-              type="file"
-              name="collection-file"
-              accept=".xlsx,.xls"
-              onChange={handleCollectionFileChange}
-              id="collection-upload-input"
-              style={{ display: 'none' }}
-            />
-            <label htmlFor="collection-upload-input" className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
-              <Upload size={18} /> Upload Collection
-            </label>
+          )}
+          {/* Upload Sales - Sales Manager, Sales Official, Admin only */}
+          {(hasRole('admin') || hasRole('sales_official') || hasRole('sales_manager')) && (
+            <div className="upload-container" style={{ marginLeft: '15px' }}>
+              <input
+                type="file"
+                name="sales-file"
+                accept=".xlsx,.xls"
+                onChange={handleSalesFileChange}
+                id="sales-upload-input"
+                style={{ display: 'none' }}
+              />
+              <label htmlFor="sales-upload-input" className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
+                <Upload size={18} /> Upload Sales
+              </label>
+              {salesUploadFile && (
+                <span style={{ marginLeft: '10px', fontSize: '10px', color: '#6b7280' }}>
+                  {salesUploadFile.name}
+                </span>
+              )}
+              {salesUploadFile && (
+                <button 
+                  className="btn btn-primary"
+                  onClick={handleSalesUpload}
+                  disabled={loading}
+                  style={{ marginLeft: '10px' }}
+                >
+                  {loading ? 'Uploading...' : 'Submit'}
+                </button>
+              )}
+            </div>
+          )}
+          {/* Upload Collection - Sales Manager, Sales Official, Admin only */}
+          {(hasRole('admin') || hasRole('sales_official') || hasRole('sales_manager')) && (
+            <div className="upload-container" style={{ marginLeft: '15px' }}>
+              <input
+                type="file"
+                name="collection-file"
+                accept=".xlsx,.xls"
+                onChange={handleCollectionFileChange}
+                id="collection-upload-input"
+                style={{ display: 'none' }}
+              />
+              <label htmlFor="collection-upload-input" className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
+                <Upload size={18} /> Upload Collection
+              </label>
             {collectionUploadFile && (
               <span style={{ marginLeft: '10px', fontSize: '10px', color: '#6b7280' }}>
                 {collectionUploadFile.name}
@@ -633,6 +646,7 @@ const OverdueReport = () => {
               </button>
             )}
           </div>
+          )}
           <button 
             className="btn btn-secondary"
             onClick={handleExport}
@@ -640,30 +654,32 @@ const OverdueReport = () => {
           >
             <Download size={18} /> Export Excel
           </button>
-          <div style={{ marginLeft: '15px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <input
-              type="date"
-              value={balanceStartDate}
-              onChange={(e) => setBalanceStartDate(e.target.value)}
-              placeholder="Start Date"
-              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
-            />
-            <span>to</span>
-            <input
-              type="date"
-              value={balanceEndDate}
-              onChange={(e) => setBalanceEndDate(e.target.value)}
-              placeholder="End Date"
-              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
-            />
-            <button 
-              className="btn btn-primary"
-              onClick={handleCalculateBalance}
-              disabled={loading || !balanceStartDate || !balanceEndDate}
-            >
-              <RefreshCw size={18} /> Calculate Balance
-            </button>
-          </div>
+          {/* Calculate Balance - Sales Manager, Sales Official, Admin only */}
+          {(hasRole('admin') || hasRole('sales_official') || hasRole('sales_manager')) && (
+            <div className="calculate-balance-section" style={{ marginLeft: '15px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <label>From:</label>
+              <input 
+                type="date" 
+                value={balanceStartDate} 
+                onChange={(e) => setBalanceStartDate(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+              />
+              <label>To:</label>
+              <input 
+                type="date" 
+                value={balanceEndDate} 
+                onChange={(e) => setBalanceEndDate(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+              />
+              <button 
+                className="btn btn-primary" 
+                onClick={handleCalculateBalance} 
+                disabled={loading || !balanceStartDate || !balanceEndDate}
+              >
+                <RefreshCw size={18} /> Calculate Balance
+              </button>
+            </div>
+          )}
         </div>
         <div className="action-right">
           <div className="search-box">
@@ -910,7 +926,9 @@ const OverdueReport = () => {
                 <th>Lower Limit Overdue</th>
                 <th>Upper Limit Overdue</th>
                 <th>Close to Lower Limit (Last Week)</th>
-                <th>Actions</th>
+                {(hasRole('admin') || hasRole('sales_official') || hasRole('sales_manager')) && (
+                  <th>Actions</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -950,15 +968,18 @@ const OverdueReport = () => {
                         <span style={{ color: '#9ca3af', fontSize: '12px' }}>—</span>
                       )}
                     </td>
-                    <td className="actions-cell">
-                      <button 
-                        className="icon-btn" 
-                        onClick={() => handleEditLimits(item)}
-                        title="Edit Limits"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                    </td>
+                    {/* Edit Limits - Admin, Sales Official, Sales Manager only */}
+                    {(hasRole('admin') || hasRole('sales_official') || hasRole('sales_manager')) && (
+                      <td className="actions-cell">
+                        <button 
+                          className="icon-btn" 
+                          onClick={() => handleEditLimits(item)}
+                          title="Edit Limits"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}

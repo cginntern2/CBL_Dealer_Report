@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { 
   BarChart3,
@@ -13,7 +14,19 @@ import './Home.css';
 
 const Home = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [welcomeMessage, setWelcomeMessage] = useState('Welcome to CBL Dealer Report System');
+  
+  // Get user's display name (full name or username)
+  const getUserDisplayName = () => {
+    if (user?.full_name) {
+      return user.full_name;
+    }
+    if (user?.username) {
+      return user.username;
+    }
+    return 'User';
+  };
 
   const fetchWelcome = () => {
     axios.get('/api/welcome')
@@ -41,7 +54,9 @@ const Home = () => {
         <div className="welcome-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
             <div style={{ flex: 1 }}>
-              <h2 className="welcome-title">{welcomeMessage}</h2>
+              <h2 className="welcome-title">
+                Welcome, {getUserDisplayName()}!
+              </h2>
               <p className="welcome-subtitle">
                 Manage and track your dealer reports, achievements, and analytics from one central location.
               </p>

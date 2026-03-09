@@ -25,7 +25,7 @@
 }
 
 .page-title {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 600;
   color: #1e3a8a;
   margin: 0;
@@ -40,7 +40,7 @@
   padding: 10px 20px;
   border: none;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 500;
   cursor: pointer;
   display: flex;
@@ -126,7 +126,7 @@
 }
 
 .filter-group label {
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 500;
   color: #374151;
   white-space: nowrap;
@@ -136,7 +136,7 @@
   padding: 8px 12px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 10px;
   background: white;
   color: #374151;
   cursor: pointer;
@@ -160,7 +160,7 @@
 }
 
 .territory-filter label {
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 500;
   color: #374151;
   white-space: nowrap;
@@ -170,7 +170,7 @@
   padding: 10px 12px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 10px;
   background: white;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -185,7 +185,7 @@
 
 .limit-warning {
   color: #f59e0b;
-  font-size: 12px;
+  font-size: 10px;
   font-style: italic;
   margin-left: 8px;
 }
@@ -209,7 +209,7 @@
   padding: 12px 12px 12px 40px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 10px;
   transition: all 0.3s ease;
 }
 
@@ -220,7 +220,7 @@
 }
 
 .dealer-count {
-  font-size: 14px;
+  font-size: 10px;
   color: #6b7280;
   display: flex;
   align-items: center;
@@ -250,13 +250,13 @@
   padding: 16px;
   text-align: left;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 10px;
 }
 
 .dealers-table td {
   padding: 16px;
   border-bottom: 1px solid #e5e7eb;
-  font-size: 14px;
+  font-size: 10px;
   color: #374151;
 }
 
@@ -278,7 +278,7 @@
 .status-badge {
   padding: 4px 12px;
   border-radius: 12px;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 500;
   text-transform: capitalize;
 }
@@ -302,7 +302,7 @@
   text-align: center;
   padding: 40px;
   color: #6b7280;
-  font-size: 16px;
+  font-size: 10px;
 }
 
 /* Modal Styles */
@@ -340,7 +340,7 @@
 
 .modal-header h2 {
   margin: 0;
-  font-size: 24px;
+  font-size: 22px;
   color: #1e3a8a;
 }
 
@@ -381,7 +381,7 @@
 .form-group label {
   display: block;
   margin-bottom: 6px;
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 500;
   color: #374151;
 }
@@ -393,7 +393,7 @@
   padding: 10px 12px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 10px;
   transition: all 0.3s ease;
   font-family: inherit;
 }
@@ -428,7 +428,7 @@
 
 .upload-info p {
   margin: 8px 0;
-  font-size: 14px;
+  font-size: 10px;
   color: #374151;
 }
 
@@ -440,19 +440,19 @@
 
 .upload-info li {
   margin: 4px 0;
-  font-size: 14px;
+  font-size: 10px;
 }
 
 .upload-info .note {
   margin-top: 12px;
   font-style: italic;
   color: #6b7280;
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .file-name {
   margin-top: 8px;
-  font-size: 13px;
+  font-size: 11px;
   color: #059669;
   font-weight: 500;
 }
@@ -461,7 +461,7 @@
   padding: 12px;
   border-radius: 8px;
   margin-bottom: 16px;
-  font-size: 14px;
+  font-size: 10px;
 }
 
 .upload-status.success {

@@ -1,33 +1,44 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { authenticateToken, authorize } = require('../middleware/auth');
 
-// Get all dealer billing cycles (exceptions)
+// Get all dealers with their billing cycles
 router.get('/', (req, res) => {
-  const query = `
+  const { showExceptionsOnly } = req.query;
+  
+  let query = `
     SELECT 
-      dbc.id,
-      dbc.dealer_code,
+      d.id,
+      d.dealer_code,
       d.dealer_name,
       t.territory_name,
-      dbc.cycle_start_day,
-      dbc.notes,
-      dbc.created_at,
-      dbc.updated_at
-    FROM dealer_billing_cycles dbc
-    INNER JOIN dealers d ON dbc.dealer_code = d.dealer_code
+      COALESCE(d.billing_cycle_start_day, 1) as cycle_start_day,
+      d.updated_at
+    FROM dealers d
     LEFT JOIN territories t ON d.territory_id = t.id
-    ORDER BY dbc.cycle_start_day, d.dealer_name
   `;
+  
+  // If showExceptionsOnly is true, only show dealers with non-standard cycles
+  if (showExceptionsOnly === 'true') {
+    query += ` WHERE d.billing_cycle_start_day IS NOT NULL AND d.billing_cycle_start_day != 1`;
+  }
+  
+  query += ` ORDER BY d.billing_cycle_start_day DESC, d.dealer_name`;
 
   db.query(query, (err, results) => {
     if (err) {
       console.error('Error fetching billing cycles:', err);
       return res.status(500).json({ error: 'Failed to fetch billing cycles' });
     }
+    
+    // Count exceptions (non-standard cycles)
+    const exceptions = results.filter(r => r.cycle_start_day !== 1);
+    
     res.json({ 
-      billingCycles: results,
-      total: results.length
+      billingCycles: showExceptionsOnly === 'true' ? exceptions : results,
+      total: results.length,
+      exceptionsCount: exceptions.length
     });
   });
 });
@@ -38,14 +49,14 @@ router.get('/dealer/:dealerCode', (req, res) => {
   
   const query = `
     SELECT 
-      dbc.id,
-      dbc.dealer_code,
+      d.id,
+      d.dealer_code,
       d.dealer_name,
-      dbc.cycle_start_day,
-      dbc.notes
-    FROM dealer_billing_cycles dbc
-    INNER JOIN dealers d ON dbc.dealer_code = d.dealer_code
-    WHERE dbc.dealer_code = ?
+      t.territory_name,
+      COALESCE(d.billing_cycle_start_day, 1) as cycle_start_day
+    FROM dealers d
+    LEFT JOIN territories t ON d.territory_id = t.id
+    WHERE d.dealer_code = ?
   `;
 
   db.query(query, [dealerCode], (err, results) => {
@@ -55,24 +66,25 @@ router.get('/dealer/:dealerCode', (req, res) => {
     }
     
     if (results.length === 0) {
-      // No exception found - dealer uses standard cycle (1-30/31)
-      return res.json({ 
-        hasCycle: false,
-        cycleStartDay: 1,
-        message: 'Dealer uses standard monthly cycle (1st-30th/31st)'
-      });
+      return res.status(404).json({ error: 'Dealer not found' });
     }
     
+    const dealer = results[0];
+    const isStandardCycle = dealer.cycle_start_day === 1;
+    
     res.json({ 
-      hasCycle: true,
-      ...results[0]
+      ...dealer,
+      isStandardCycle,
+      message: isStandardCycle 
+        ? 'Dealer uses standard monthly cycle (1st-30th/31st)'
+        : `Dealer uses custom cycle (${dealer.cycle_start_day}th-${dealer.cycle_start_day - 1}th)`
     });
   });
 });
 
-// Add or update billing cycle for a dealer
-router.post('/', (req, res) => {
-  const { dealer_code, cycle_start_day, notes } = req.body;
+// Update billing cycle for a dealer (Admin and Sales Manager only)
+router.post('/', authenticateToken, authorize('admin', 'sales_manager'), (req, res) => {
+  const { dealer_code, cycle_start_day } = req.body;
 
   if (!dealer_code) {
     return res.status(400).json({ error: 'Dealer code is required' });
@@ -82,62 +94,57 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Cycle start day must be between 1 and 28' });
   }
 
-  // Check if dealer exists
-  db.query('SELECT dealer_code, dealer_name FROM dealers WHERE dealer_code = ?', [dealer_code], (err, dealerResults) => {
+  // Update the dealer's billing cycle
+  const updateQuery = `
+    UPDATE dealers 
+    SET billing_cycle_start_day = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE dealer_code = ?
+  `;
+
+  db.query(updateQuery, [parseInt(cycle_start_day), dealer_code], (err, result) => {
     if (err) {
-      console.error('Error checking dealer:', err);
-      return res.status(500).json({ error: 'Database error' });
+      console.error('Error saving billing cycle:', err);
+      return res.status(500).json({ error: 'Failed to save billing cycle' });
     }
 
-    if (dealerResults.length === 0) {
+    if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Dealer not found' });
     }
 
-    // Insert or update billing cycle
-    const upsertQuery = `
-      INSERT INTO dealer_billing_cycles (dealer_code, cycle_start_day, notes)
-      VALUES (?, ?, ?)
-      ON DUPLICATE KEY UPDATE 
-        cycle_start_day = VALUES(cycle_start_day),
-        notes = VALUES(notes),
-        updated_at = CURRENT_TIMESTAMP
-    `;
-
-    db.query(upsertQuery, [dealer_code, cycle_start_day, notes || null], (err, result) => {
-      if (err) {
-        console.error('Error saving billing cycle:', err);
-        return res.status(500).json({ error: 'Failed to save billing cycle' });
-      }
-
-      const cycleEndDay = cycle_start_day - 1;
-      res.json({
-        success: true,
-        message: `Billing cycle set: ${cycle_start_day}th to ${cycleEndDay}th for ${dealerResults[0].dealer_name}`,
-        dealer_code,
-        cycle_start_day,
-        cycle_end_day: cycleEndDay
-      });
+    const cycleEndDay = cycle_start_day - 1;
+    res.json({
+      success: true,
+      message: `Billing cycle set: ${cycle_start_day}th to ${cycleEndDay === 0 ? 'end of previous month' : cycleEndDay + 'th'}`,
+      dealer_code,
+      cycle_start_day: parseInt(cycle_start_day),
+      cycle_end_day: cycleEndDay
     });
   });
 });
 
-// Delete billing cycle (revert to standard)
-router.delete('/:dealerCode', (req, res) => {
+// Reset billing cycle to standard (1st of month) (Admin and Sales Manager only)
+router.delete('/:dealerCode', authenticateToken, authorize('admin', 'sales_manager'), (req, res) => {
   const { dealerCode } = req.params;
 
-  db.query('DELETE FROM dealer_billing_cycles WHERE dealer_code = ?', [dealerCode], (err, result) => {
+  const updateQuery = `
+    UPDATE dealers 
+    SET billing_cycle_start_day = 1, updated_at = CURRENT_TIMESTAMP
+    WHERE dealer_code = ?
+  `;
+
+  db.query(updateQuery, [dealerCode], (err, result) => {
     if (err) {
-      console.error('Error deleting billing cycle:', err);
-      return res.status(500).json({ error: 'Failed to delete billing cycle' });
+      console.error('Error resetting billing cycle:', err);
+      return res.status(500).json({ error: 'Failed to reset billing cycle' });
     }
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Billing cycle not found for this dealer' });
+      return res.status(404).json({ error: 'Dealer not found' });
     }
 
     res.json({
       success: true,
-      message: 'Billing cycle removed. Dealer now uses standard monthly cycle (1st-30th/31st)'
+      message: 'Billing cycle reset to standard monthly cycle (1st-30th/31st)'
     });
   });
 });
@@ -155,11 +162,10 @@ router.get('/search-dealers', (req, res) => {
       d.dealer_code,
       d.dealer_name,
       t.territory_name,
-      CASE WHEN dbc.id IS NOT NULL THEN 1 ELSE 0 END as has_custom_cycle,
-      dbc.cycle_start_day
+      CASE WHEN COALESCE(d.billing_cycle_start_day, 1) != 1 THEN 1 ELSE 0 END as has_custom_cycle,
+      COALESCE(d.billing_cycle_start_day, 1) as cycle_start_day
     FROM dealers d
     LEFT JOIN territories t ON d.territory_id = t.id
-    LEFT JOIN dealer_billing_cycles dbc ON d.dealer_code = dbc.dealer_code
     WHERE d.dealer_code LIKE ? OR d.dealer_name LIKE ?
     ORDER BY d.dealer_name
     LIMIT 20

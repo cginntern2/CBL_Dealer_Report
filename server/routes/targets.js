@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const xlsx = require('xlsx');
 const db = require('../db');
+const { authenticateToken, authorize, canAccessDealerData } = require('../middleware/auth');
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -200,8 +201,8 @@ const parseMonthYear = (monthStr) => {
   return null;
 };
 
-// Upload ABP Targets from Excel
-router.post('/abp/upload', upload.single('file'), (req, res) => {
+// Upload ABP Targets from Excel (Sales Manager, Sales Official, Admin only)
+router.post('/abp/upload', authenticateToken, authorize('admin', 'sales_official', 'sales_manager'), upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -898,8 +899,8 @@ router.post('/abp/upload', upload.single('file'), (req, res) => {
   }
 });
 
-// Upload Forecast Targets from Excel
-router.post('/forecast/upload', upload.single('file'), (req, res) => {
+// Upload Forecast Targets from Excel (Sales Manager, Sales Official, Admin only)
+router.post('/forecast/upload', authenticateToken, authorize('admin', 'sales_official', 'sales_manager'), upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -1285,7 +1286,8 @@ const excelDateToJSDate = (excelDate) => {
 };
 
 // Upload Achievements from Excel (Sales Register format)
-router.post('/achievements/upload', upload.single('file'), (req, res) => {
+// Upload Achievements from Excel (Sales Manager, Sales Official, Admin only)
+router.post('/achievements/upload', authenticateToken, authorize('admin', 'sales_official', 'sales_manager'), upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -1633,7 +1635,7 @@ router.post('/achievements/upload', upload.single('file'), (req, res) => {
 });
 
 // Get Target vs Achievement Report
-router.get('/report', (req, res) => {
+router.get('/report', authenticateToken, canAccessDealerData, (req, res) => {
   const { dealer_code, year, month, territory, showAll = 'false' } = req.query;
   const showAllFlag = showAll === 'true';
   const defaultLimit = 10;
@@ -1644,7 +1646,11 @@ router.get('/report', (req, res) => {
   let whereClause = 'WHERE 1=1';
   const queryParams = [];
   
-  if (dealer_code) {
+  // If dealer role, only show their own data (override dealer_code param)
+  if (req.user.role_name === 'dealer' && req.user.dealer_code) {
+    whereClause += ' AND BINARY d.dealer_code = ?';
+    queryParams.push(req.user.dealer_code);
+  } else if (dealer_code) {
     whereClause += ' AND d.dealer_code = ?';
     queryParams.push(normalizeDealerCode(dealer_code));
   }

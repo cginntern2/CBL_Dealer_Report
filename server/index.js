@@ -32,6 +32,14 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Authentication routes (public)
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', authRoutes);
+
+// User management routes (protected)
+const userRoutes = require('./routes/users');
+app.use('/api/users', userRoutes);
+
 // Home/Welcome route
 app.get('/api/welcome', (req, res) => {
   res.json({ 

@@ -25,14 +25,14 @@
 }
 
 .page-title {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 600;
   color: #ffffff;
   margin: 0 0 8px 0;
 }
 
 .page-subtitle {
-  font-size: 14px;
+  font-size: 10px;
   color: rgba(255, 255, 255, 0.7);
   margin: 0;
 }
@@ -46,7 +46,7 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   color: #ffffff;
-  font-size: 14px;
+  font-size: 10px;
   cursor: pointer;
   transition: all 0.3s ease;
 }
@@ -86,7 +86,7 @@
 
 .loading-container p {
   color: #64748b;
-  font-size: 16px;
+  font-size: 10px;
 }
 
 /* Statistics Section */
@@ -181,14 +181,14 @@
 }
 
 .stat-label {
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 500;
   color: #64748b;
   margin: 0 0 8px 0;
 }
 
 .stat-value {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   color: #1e3a8a;
   margin: 0 0 4px 0;
@@ -196,7 +196,7 @@
 }
 
 .stat-sublabel {
-  font-size: 12px;
+  font-size: 10px;
   color: #9ca3af;
   margin: 0;
 }
@@ -215,14 +215,14 @@
 }
 
 .welcome-title {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 600;
   margin-bottom: 12px;
   color: #ffffff;
 }
 
 .welcome-subtitle {
-  font-size: 16px;
+  font-size: 10px;
   color: rgba(255, 255, 255, 0.9);
   line-height: 1.6;
   margin: 0;
@@ -233,7 +233,7 @@
 }
 
 .section-title {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
   color: #1e3a8a;
   margin-bottom: 20px;
@@ -273,7 +273,7 @@
 }
 
 .module-link {
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 500;
   color: #3b82f6;
   display: inline-flex;
@@ -292,14 +292,14 @@
 }
 
 .module-title {
-  font-size: 18px;
+  font-size: 10px;
   font-weight: 600;
   color: #1e3a8a;
   margin-bottom: 10px;
 }
 
 .module-description {
-  font-size: 14px;
+  font-size: 10px;
   color: #64748b;
   line-height: 1.6;
   margin: 0;
@@ -352,14 +352,14 @@
 }
 
 .status-title {
-  font-size: 18px;
+  font-size: 10px;
   font-weight: 600;
   color: #1e3a8a;
   margin-bottom: 5px;
 }
 
 .status-description {
-  font-size: 14px;
+  font-size: 10px;
   color: #64748b;
   margin: 0;
   line-height: 1.5;
@@ -374,7 +374,7 @@
 
 .version-footer p {
   color: #64748b;
-  font-size: 14px;
+  font-size: 10px;
   margin: 0;
 }
 
@@ -398,7 +398,7 @@
   }
 
   .welcome-title {
-    font-size: 22px;
+    font-size: 20px;
   }
 
   .modules-grid {

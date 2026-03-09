@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const xlsx = require('xlsx');
 const db = require('../db');
+const { authenticateToken, authorize, hasPermission, canAccessDealerData } = require('../middleware/auth');
 
 // Configure multer for file uploads (for future use)
 const upload = multer({ 
@@ -32,12 +33,18 @@ const getDaysInMonth = (year, month) => {
 //    - Monitored DURING the entire billing cycle
 //    - Positive value = Violation (balance exceeded upper limit)
 //    - Negative value = No violation (balance within upper limit)
-router.get('/report', (req, res) => {
+router.get('/report', authenticateToken, canAccessDealerData, (req, res) => {
   const { year, month, territory } = req.query;
   
   // Build WHERE clause
   let whereClause = 'WHERE 1=1';
   const queryParams = [];
+  
+  // If dealer role, only show their own data
+  if (req.user.role_name === 'dealer' && req.user.dealer_code) {
+    whereClause += ' AND BINARY d.dealer_code = ?';
+    queryParams.push(req.user.dealer_code);
+  }
   
   if (territory && territory !== 'all') {
     whereClause += ' AND d.territory_id = ?';
@@ -173,8 +180,8 @@ router.get('/report', (req, res) => {
   });
 });
 
-// Update dealer limits
-router.put('/limits/:dealerCode', (req, res) => {
+// Update dealer limits (Admin, Sales Official, Sales Manager only)
+router.put('/limits/:dealerCode', authenticateToken, authorize('admin', 'sales_official', 'sales_manager'), (req, res) => {
   const { dealerCode } = req.params;
   const { lower_limit, upper_limit } = req.body;
   const normalizedCode = normalizeDealerCode(dealerCode);
@@ -785,7 +792,7 @@ router.post('/upload', upload.single('file'), (req, res) => {
 
 // Upload Opening/Closing Balance from Territory Wise Sales & Collection Excel
 // File format: Row 8 = headers, Column B = Customer Code (Dealer Code), Column W = Closing Balance
-router.post('/upload-balance', upload.single('file'), (req, res) => {
+router.post('/upload-balance', authenticateToken, authorize('admin', 'sales_official', 'sales_manager'), upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -1061,9 +1068,9 @@ router.post('/upload-balance', upload.single('file'), (req, res) => {
   }
 });
 
-// Upload Daily Collections from Excel
+// Upload Daily Collections from Excel (Sales Manager, Sales Official, Admin only)
 // File format: Should have Dealer Code, Date, Collection Amount columns
-router.post('/collections/upload', upload.single('file'), (req, res) => {
+router.post('/collections/upload', authenticateToken, authorize('admin', 'sales_official', 'sales_manager'), upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -1381,9 +1388,9 @@ router.post('/collections/upload', upload.single('file'), (req, res) => {
   }
 });
 
-// Calculate closing balance for all dealers
+// Calculate closing balance for all dealers (Sales Manager, Sales Official, Admin only)
 // Formula: Closing = Opening + Sales - Collection
-router.post('/calculate-balance', (req, res) => {
+router.post('/calculate-balance', authenticateToken, authorize('admin', 'sales_official', 'sales_manager'), (req, res) => {
   const { startDate, endDate } = req.body;
   
   if (!startDate || !endDate) {

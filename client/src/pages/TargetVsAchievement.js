@@ -30,6 +30,7 @@ const TargetVsAchievement = () => {
   const [breakdownSearchTerm, setBreakdownSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [expandedTerritories, setExpandedTerritories] = useState(new Set());
+  const [expandedNationals, setExpandedNationals] = useState(new Set());
   const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'summary', or 'unit-details'
   const [dashboardComparisonType, setDashboardComparisonType] = useState('abp'); // 'abp' or 'forecast' for dashboard
   const [unitDetailsData, setUnitDetailsData] = useState([]);
@@ -368,6 +369,7 @@ const TargetVsAchievement = () => {
     setBreakdownType(type);
     setExpandedDealer(null);
     setExpandedTerritories(new Set());
+    setExpandedNationals(new Set());
     setBreakdownSearchTerm('');
     setSortConfig({ key: null, direction: 'asc' });
     
@@ -571,6 +573,123 @@ const TargetVsAchievement = () => {
     return territories;
   };
 
+  // Group breakdown data by National -> Territory -> Dealer
+  const getNationalGroupedData = () => {
+    if (!breakdownData || breakdownData.length === 0) return [];
+    
+    // Group by national, then by territory
+    const nationalMap = {};
+    breakdownData.forEach(item => {
+      const nationalName = item.nat_name || 'N/A';
+      const territoryName = item.territory_name || 'N/A';
+      
+      if (!nationalMap[nationalName]) {
+        nationalMap[nationalName] = { territories: {} };
+      }
+      if (!nationalMap[nationalName].territories[territoryName]) {
+        nationalMap[nationalName].territories[territoryName] = [];
+      }
+      nationalMap[nationalName].territories[territoryName].push(item);
+    });
+    
+    // Build hierarchical structure
+    const nationals = Object.keys(nationalMap).map(nationalName => {
+      const territoryData = nationalMap[nationalName].territories;
+      
+      // Build territories array for this national
+      const territories = Object.keys(territoryData).map(territoryName => {
+        const dealers = territoryData[territoryName];
+        
+        // Calculate territory totals
+        const totalTargetAmount = dealers.reduce((sum, d) => {
+          const target = breakdownType === 'abp' ? (d.abp_target_amount || 0) : (d.forecast_target_amount || 0);
+          return sum + parseFloat(target);
+        }, 0);
+        
+        const totalAchievementAmount = dealers.reduce((sum, d) => sum + parseFloat(d.achievement_amount || 0), 0);
+        const totalTargetQty = dealers.reduce((sum, d) => {
+          const qty = breakdownType === 'abp' ? (d.abp_target_quantity || 0) : (d.forecast_target_quantity || 0);
+          return sum + parseFloat(qty);
+        }, 0);
+        const totalAchievementQty = dealers.reduce((sum, d) => sum + parseFloat(d.achievement_quantity || 0), 0);
+        
+        const amountPercent = totalTargetAmount > 0 ? (totalAchievementAmount / totalTargetAmount) * 100 : 0;
+        const qtyPercent = totalTargetQty > 0 ? (totalAchievementQty / totalTargetQty) * 100 : 0;
+        
+        return {
+          territoryName,
+          dealers,
+          totalTargetAmount,
+          totalAchievementAmount,
+          totalTargetQty,
+          totalAchievementQty,
+          amountPercent,
+          qtyPercent,
+          dealerCount: dealers.length
+        };
+      });
+      
+      // Sort territories by name
+      territories.sort((a, b) => a.territoryName.localeCompare(b.territoryName));
+      
+      // Calculate national totals
+      const totalTargetAmount = territories.reduce((sum, t) => sum + t.totalTargetAmount, 0);
+      const totalAchievementAmount = territories.reduce((sum, t) => sum + t.totalAchievementAmount, 0);
+      const totalTargetQty = territories.reduce((sum, t) => sum + t.totalTargetQty, 0);
+      const totalAchievementQty = territories.reduce((sum, t) => sum + t.totalAchievementQty, 0);
+      const totalDealers = territories.reduce((sum, t) => sum + t.dealerCount, 0);
+      
+      const amountPercent = totalTargetAmount > 0 ? (totalAchievementAmount / totalTargetAmount) * 100 : 0;
+      const qtyPercent = totalTargetQty > 0 ? (totalAchievementQty / totalTargetQty) * 100 : 0;
+      
+      return {
+        nationalName,
+        territories,
+        totalTargetAmount,
+        totalAchievementAmount,
+        totalTargetQty,
+        totalAchievementQty,
+        amountPercent,
+        qtyPercent,
+        territoryCount: territories.length,
+        dealerCount: totalDealers
+      };
+    });
+    
+    // Sort nationals by name
+    nationals.sort((a, b) => {
+      if (a.nationalName === 'N/A') return 1;
+      if (b.nationalName === 'N/A') return -1;
+      return a.nationalName.localeCompare(b.nationalName);
+    });
+    
+    // Apply search filter
+    if (breakdownSearchTerm) {
+      const searchLower = breakdownSearchTerm.toLowerCase();
+      return nationals.map(national => {
+        const filteredTerritories = national.territories.map(territory => {
+          const filteredDealers = territory.dealers.filter(item => 
+            item.dealer_code?.toLowerCase().includes(searchLower) ||
+            item.dealer_name?.toLowerCase().includes(searchLower) ||
+            item.territory_name?.toLowerCase().includes(searchLower) ||
+            item.nat_name?.toLowerCase().includes(searchLower)
+          );
+          if (territory.territoryName.toLowerCase().includes(searchLower) || filteredDealers.length > 0) {
+            return { ...territory, dealers: filteredDealers };
+          }
+          return null;
+        }).filter(t => t !== null);
+        
+        if (national.nationalName.toLowerCase().includes(searchLower) || filteredTerritories.length > 0) {
+          return { ...national, territories: filteredTerritories };
+        }
+        return null;
+      }).filter(n => n !== null);
+    }
+    
+    return nationals;
+  };
+
   // Toggle territory expansion
   const toggleTerritory = (territoryName) => {
     const newExpanded = new Set(expandedTerritories);
@@ -580,6 +699,17 @@ const TargetVsAchievement = () => {
       newExpanded.add(territoryName);
     }
     setExpandedTerritories(newExpanded);
+  };
+
+  // Toggle national expansion
+  const toggleNational = (nationalName) => {
+    const newExpanded = new Set(expandedNationals);
+    if (newExpanded.has(nationalName)) {
+      newExpanded.delete(nationalName);
+    } else {
+      newExpanded.add(nationalName);
+    }
+    setExpandedNationals(newExpanded);
   };
 
   // Toggle territory expansion for unit details
@@ -852,7 +982,7 @@ const TargetVsAchievement = () => {
               color: activeTab === 'dashboard' ? '#3b82f6' : '#6b7280',
               fontWeight: activeTab === 'dashboard' ? '600' : '400',
               cursor: 'pointer',
-              fontSize: '15px'
+              fontSize: '11px'
             }}
           >
             Dashboard
@@ -872,7 +1002,7 @@ const TargetVsAchievement = () => {
               color: activeTab === 'summary' ? '#3b82f6' : '#6b7280',
               fontWeight: activeTab === 'summary' ? '600' : '400',
               cursor: 'pointer',
-              fontSize: '15px'
+              fontSize: '11px'
             }}
           >
             Detailed Summary
@@ -892,7 +1022,7 @@ const TargetVsAchievement = () => {
               color: activeTab === 'unit-details' ? '#3b82f6' : '#6b7280',
               fontWeight: activeTab === 'unit-details' ? '600' : '400',
               cursor: 'pointer',
-              fontSize: '15px'
+              fontSize: '11px'
             }}
           >
             Application Unit Details
@@ -907,7 +1037,7 @@ const TargetVsAchievement = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '50px' }}>
             {/* ABP vs Achievement Section */}
             <div>
-              <h2 style={{ fontSize: '22px', fontWeight: '600', marginBottom: '30px', color: '#1f2937', textAlign: 'center' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '30px', color: '#1f2937', textAlign: 'center' }}>
                 ABP vs Achievement
               </h2>
               {(() => {
@@ -966,11 +1096,11 @@ const TargetVsAchievement = () => {
                         textAlign: 'center',
                         minWidth: '250px'
                       }}>
-                        <div style={{ fontSize: '18px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
+                        <div style={{ fontSize: '10px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
                           Sales Achievement %
                         </div>
                         <div style={{ 
-                          fontSize: '48px', 
+                          fontSize: '46px', 
                           fontWeight: '700', 
                           color: abpSalesPercent >= 100 ? '#10b981' : abpSalesPercent >= 80 ? '#f59e0b' : '#ef4444'
                         }}>
@@ -987,11 +1117,11 @@ const TargetVsAchievement = () => {
                         textAlign: 'center',
                         minWidth: '250px'
                       }}>
-                        <div style={{ fontSize: '18px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
+                        <div style={{ fontSize: '10px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
                           Quantity Achievement %
                         </div>
                         <div style={{ 
-                          fontSize: '48px', 
+                          fontSize: '46px', 
                           fontWeight: '700', 
                           color: abpQuantityPercent >= 100 ? '#10b981' : abpQuantityPercent >= 80 ? '#f59e0b' : '#ef4444'
                         }}>
@@ -1004,7 +1134,7 @@ const TargetVsAchievement = () => {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
                       {/* ABP Sales Chart */}
                       <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
-                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Sales Achievement Percentage by Territory (ABP)</h3>
+                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '10px', fontWeight: '600' }}>Sales Achievement Percentage by Territory (ABP)</h3>
                         {(() => {
                           if (reportData.length === 0) {
                             return (
@@ -1078,7 +1208,7 @@ const TargetVsAchievement = () => {
 
                       {/* ABP Quantity Chart */}
                       <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
-                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Quantity Achievement Percentage by Territory (ABP)</h3>
+                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '10px', fontWeight: '600' }}>Quantity Achievement Percentage by Territory (ABP)</h3>
                         {(() => {
                           if (reportData.length === 0) {
                             return (
@@ -1157,7 +1287,7 @@ const TargetVsAchievement = () => {
 
             {/* Forecast vs Achievement Section */}
             <div>
-              <h2 style={{ fontSize: '22px', fontWeight: '600', marginBottom: '30px', color: '#1f2937', textAlign: 'center' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '30px', color: '#1f2937', textAlign: 'center' }}>
                 Forecast vs Achievement
               </h2>
               {(() => {
@@ -1215,11 +1345,11 @@ const TargetVsAchievement = () => {
                         textAlign: 'center',
                         minWidth: '250px'
                       }}>
-                        <div style={{ fontSize: '18px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
+                        <div style={{ fontSize: '10px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
                           Sales Achievement %
                         </div>
                         <div style={{ 
-                          fontSize: '48px', 
+                          fontSize: '46px', 
                           fontWeight: '700', 
                           color: forecastSalesPercent >= 100 ? '#10b981' : forecastSalesPercent >= 80 ? '#f59e0b' : '#ef4444'
                         }}>
@@ -1236,11 +1366,11 @@ const TargetVsAchievement = () => {
                         textAlign: 'center',
                         minWidth: '250px'
                       }}>
-                        <div style={{ fontSize: '18px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
+                        <div style={{ fontSize: '10px', color: '#6b7280', fontWeight: '500', marginBottom: '15px' }}>
                           Quantity Achievement %
                         </div>
                         <div style={{ 
-                          fontSize: '48px', 
+                          fontSize: '46px', 
                           fontWeight: '700', 
                           color: forecastQuantityPercent >= 100 ? '#10b981' : forecastQuantityPercent >= 80 ? '#f59e0b' : '#ef4444'
                         }}>
@@ -1253,7 +1383,7 @@ const TargetVsAchievement = () => {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', marginBottom: '30px' }}>
                       {/* Forecast Sales Chart */}
                       <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
-                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Sales Achievement Percentage by Territory (Forecast)</h3>
+                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '10px', fontWeight: '600' }}>Sales Achievement Percentage by Territory (Forecast)</h3>
                         {(() => {
                           if (reportData.length === 0) {
                             return (
@@ -1299,13 +1429,13 @@ const TargetVsAchievement = () => {
                           if (territoryData.length === 0) {
                             return (
                               <div style={{ padding: '20px', textAlign: 'center' }}>
-                                <p style={{ color: '#6b7280', fontSize: '16px', marginBottom: '10px' }}>
+                                <p style={{ color: '#6b7280', fontSize: '10px', marginBottom: '10px' }}>
                                   {hasForecastData 
                                     ? 'No territory data available for the selected filters'
                                     : `No Forecast data available for ${selectedMonth ? `Month ${selectedMonth}` : 'the selected month'}. Please select a different month or check if Forecast data has been uploaded.`}
                                 </p>
                                 {selectedMonth && (
-                                  <p style={{ color: '#9ca3af', fontSize: '14px' }}>
+                                  <p style={{ color: '#9ca3af', fontSize: '10px' }}>
                                     Selected: Year {selectedYear || 'All'}, Month {selectedMonth}
                                   </p>
                                 )}
@@ -1358,7 +1488,7 @@ const TargetVsAchievement = () => {
 
                       {/* Forecast Quantity Chart */}
                       <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
-                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Quantity Achievement Percentage by Territory (Forecast)</h3>
+                        <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '10px', fontWeight: '600' }}>Quantity Achievement Percentage by Territory (Forecast)</h3>
                         {(() => {
                           if (reportData.length === 0) {
                             return (
@@ -1404,13 +1534,13 @@ const TargetVsAchievement = () => {
                           if (territoryData.length === 0) {
                             return (
                               <div style={{ padding: '20px', textAlign: 'center' }}>
-                                <p style={{ color: '#6b7280', fontSize: '16px', marginBottom: '10px' }}>
+                                <p style={{ color: '#6b7280', fontSize: '10px', marginBottom: '10px' }}>
                                   {hasForecastQtyData 
                                     ? 'No territory data available for the selected filters'
                                     : `No Forecast quantity data available for ${selectedMonth ? `Month ${selectedMonth}` : 'the selected month'}. Please select a different month or check if Forecast data has been uploaded.`}
                                 </p>
                                 {selectedMonth && (
-                                  <p style={{ color: '#9ca3af', fontSize: '14px' }}>
+                                  <p style={{ color: '#9ca3af', fontSize: '10px' }}>
                                     Selected: Year {selectedYear || 'All'}, Month {selectedMonth}
                                   </p>
                                 )}
@@ -1476,7 +1606,7 @@ const TargetVsAchievement = () => {
             <button 
               className="btn btn-primary"
               onClick={() => fetchBreakdown('abp')}
-              style={{ padding: '15px 40px', fontSize: '16px', minWidth: '250px' }}
+              style={{ padding: '15px 40px', fontSize: '10px', minWidth: '250px' }}
             >
               <BarChart3 size={20} style={{ marginRight: '10px', verticalAlign: 'middle' }} />
               View ABP vs Achievement
@@ -1484,7 +1614,7 @@ const TargetVsAchievement = () => {
             <button 
               className="btn btn-primary"
               onClick={() => fetchBreakdown('forecast')}
-              style={{ padding: '15px 40px', fontSize: '16px', minWidth: '250px' }}
+              style={{ padding: '15px 40px', fontSize: '10px', minWidth: '250px' }}
             >
               <BarChart3 size={20} style={{ marginRight: '10px', verticalAlign: 'middle' }} />
               View Forecast vs Achievement
@@ -1525,7 +1655,7 @@ const TargetVsAchievement = () => {
                 ))}
               </select>
             </div>
-            <div style={{ marginLeft: 'auto', fontSize: '14px', color: '#666' }}>
+            <div style={{ marginLeft: 'auto', fontSize: '10px', color: '#666' }}>
               {(() => {
                 const territoryData = getUnitDetailsTerritoryGroupedData();
                 const totalItems = territoryData.reduce((sum, t) => sum + t.itemCount, 0);
@@ -1540,7 +1670,7 @@ const TargetVsAchievement = () => {
             <div className="no-data">No unit details available for selected filters.</div>
           ) : (
             <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh' }}>
-              <table className="report-table" style={{ fontSize: '14px' }}>
+              <table className="report-table" style={{ fontSize: '10px' }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#f9fafb', zIndex: 10 }}>
                   <tr>
                     <th style={{ width: '40px' }}></th>
@@ -1575,7 +1705,7 @@ const TargetVsAchievement = () => {
                           <td>{isTerritoryExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</td>
                           <td colSpan="2">
                             <strong>{territory.territoryName}</strong>
-                            <span style={{ marginLeft: '12px', fontSize: '12px', fontWeight: 'normal', color: '#6b7280' }}>
+                            <span style={{ marginLeft: '12px', fontSize: '10px', fontWeight: 'normal', color: '#6b7280' }}>
                               ({territory.itemCount} records, {territory.uniqueUnits} units)
                             </span>
                           </td>
@@ -1640,7 +1770,7 @@ const TargetVsAchievement = () => {
       {activeTab === 'summary' && breakdownType && (
         <div style={{ marginTop: '10px', marginBottom: '30px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <h2 style={{ margin: 0, fontSize: '18px' }}>
+            <h2 style={{ margin: 0, fontSize: '10px' }}>
               {breakdownType === 'abp' ? 'ABP vs Achievement' : 'Forecast vs Achievement'} - Dealer Breakdown
             </h2>
             <button
@@ -1650,6 +1780,7 @@ const TargetVsAchievement = () => {
                 setBreakdownData([]);
                 setExpandedDealer(null);
                 setExpandedTerritories(new Set());
+                setExpandedNationals(new Set());
                 setBreakdownSearchTerm('');
                 setSortConfig({ key: null, direction: 'asc' });
               }}
@@ -1672,16 +1803,17 @@ const TargetVsAchievement = () => {
                     padding: '10px 12px 10px 40px',
                     border: '1px solid #ddd',
                     borderRadius: '6px',
-                    fontSize: '14px'
+                    fontSize: '10px'
                   }}
                 />
               </div>
             </div>
-            <div style={{ fontSize: '14px', color: '#666' }}>
+            <div style={{ fontSize: '10px', color: '#666' }}>
               {(() => {
-                const territoryData = getTerritoryGroupedData();
-                const totalDealers = territoryData.reduce((sum, t) => sum + t.dealerCount, 0);
-                return `Showing ${territoryData.length} territories, ${totalDealers} dealers`;
+                const nationalData = getNationalGroupedData();
+                const totalTerritories = nationalData.reduce((sum, n) => sum + n.territoryCount, 0);
+                const totalDealers = nationalData.reduce((sum, n) => sum + n.dealerCount, 0);
+                return `Showing ${nationalData.length} nationals, ${totalTerritories} territories, ${totalDealers} dealers`;
               })()}
             </div>
           </div>
@@ -1693,12 +1825,12 @@ const TargetVsAchievement = () => {
               <div className="no-data">No data available for selected filters.</div>
             ) : (
               <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh' }}>
-                <table className="report-table" style={{ fontSize: '14px' }}>
+                <table className="report-table" style={{ fontSize: '10px' }}>
                   <thead style={{ position: 'sticky', top: 0, background: '#f9fafb', zIndex: 10 }}>
                     <tr>
                       <th style={{ width: '40px' }}></th>
-                      <th>Territory / Dealer Code</th>
-                      <th>Dealer Name</th>
+                      <th>National / Territory / Dealer</th>
+                      <th>Name</th>
                       <th>Target Amount</th>
                       <th>Achievement Amount</th>
                       <th>Amount %</th>
@@ -1710,79 +1842,134 @@ const TargetVsAchievement = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {getTerritoryGroupedData().map((territory, territoryIndex) => {
-                      const isTerritoryExpanded = expandedTerritories.has(territory.territoryName);
+                    {getNationalGroupedData().map((national, nationalIndex) => {
+                      const isNationalExpanded = expandedNationals.has(national.nationalName);
                       
                       return (
-                        <React.Fragment key={`territory-${territoryIndex}`}>
-                          {/* Territory Row */}
+                        <React.Fragment key={`national-${nationalIndex}`}>
+                          {/* National Row (Level 1) */}
                           <tr
                             style={{ 
                               cursor: 'pointer',
-                              backgroundColor: '#e0e7ff',
-                              fontWeight: '600'
+                              backgroundColor: '#1e40af',
+                              color: '#ffffff',
+                              fontWeight: '700'
                             }}
-                            onClick={() => toggleTerritory(territory.territoryName)}
-                            className="territory-row"
+                            onClick={() => toggleNational(national.nationalName)}
+                            className="national-row"
                           >
-                            <td>{isTerritoryExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</td>
+                            <td style={{ color: '#ffffff' }}>{isNationalExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</td>
                             <td colSpan="2">
-                              <strong>{territory.territoryName}</strong>
-                              <span style={{ marginLeft: '12px', fontSize: '12px', fontWeight: 'normal', color: '#6b7280' }}>
-                                ({territory.dealerCount} {territory.dealerCount === 1 ? 'dealer' : 'dealers'})
+                              <strong>{national.nationalName}</strong>
+                              <span style={{ marginLeft: '12px', fontSize: '10px', fontWeight: 'normal', opacity: 0.8 }}>
+                                ({national.territoryCount} territories, {national.dealerCount} dealers)
                               </span>
                             </td>
-                            <td>{formatCurrency(territory.totalTargetAmount)}</td>
-                            <td>{formatCurrency(territory.totalAchievementAmount)}</td>
+                            <td>{formatCurrency(national.totalTargetAmount)}</td>
+                            <td>{formatCurrency(national.totalAchievementAmount)}</td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span className={territory.avgAmountPercent >= 100 ? 'positive' : territory.avgAmountPercent >= 80 ? 'warning' : 'negative'}>
-                                  {formatPercentage(territory.avgAmountPercent)}
+                                <span style={{ color: national.amountPercent >= 100 ? '#86efac' : national.amountPercent >= 80 ? '#fde047' : '#fca5a5' }}>
+                                  {formatPercentage(national.amountPercent)}
                                 </span>
-                                <div style={{ width: '60px', height: '8px', background: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
-                                  <div style={{
-                                    width: `${Math.min(territory.avgAmountPercent, 100)}%`,
-                                    height: '100%',
-                                    background: territory.avgAmountPercent >= 100 ? '#10b981' : territory.avgAmountPercent >= 80 ? '#f59e0b' : '#ef4444',
-                                    transition: 'width 0.3s'
-                                  }} />
-                                </div>
                               </div>
                             </td>
-                            <td>{formatCurrency(territory.totalTargetQty)}</td>
-                            <td>{formatCurrency(territory.totalAchievementQty)}</td>
-                            <td style={{ color: '#999', fontStyle: 'italic' }}>-</td>
+                            <td>{formatCurrency(national.totalTargetQty)}</td>
+                            <td>{formatCurrency(national.totalAchievementQty)}</td>
+                            <td style={{ opacity: 0.6 }}>-</td>
                             <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span className={territory.avgQtyPercent >= 100 ? 'positive' : territory.avgQtyPercent >= 80 ? 'warning' : 'negative'}>
-                                  {formatPercentage(territory.avgQtyPercent)}
-                                </span>
-                                <div style={{ width: '60px', height: '8px', background: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
-                                  <div style={{
-                                    width: `${Math.min(territory.avgQtyPercent, 100)}%`,
-                                    height: '100%',
-                                    background: territory.avgQtyPercent >= 100 ? '#10b981' : territory.avgQtyPercent >= 80 ? '#f59e0b' : '#ef4444',
-                                    transition: 'width 0.3s'
-                                  }} />
-                                </div>
-                              </div>
+                              <span style={{ color: national.qtyPercent >= 100 ? '#86efac' : national.qtyPercent >= 80 ? '#fde047' : '#fca5a5' }}>
+                                {formatPercentage(national.qtyPercent)}
+                              </span>
                             </td>
                             <td>
                               <span style={{
                                 padding: '4px 8px',
                                 borderRadius: '4px',
-                                fontSize: '12px',
+                                fontSize: '10px',
                                 fontWeight: '500',
-                                background: (territory.avgAmountPercent >= 100 && territory.avgQtyPercent >= 100) ? '#d1fae5' : (territory.avgAmountPercent >= 80 || territory.avgQtyPercent >= 80) ? '#fef3c7' : '#fee2e2',
-                                color: (territory.avgAmountPercent >= 100 && territory.avgQtyPercent >= 100) ? '#065f46' : (territory.avgAmountPercent >= 80 || territory.avgQtyPercent >= 80) ? '#92400e' : '#991b1b'
+                                background: (national.amountPercent >= 100 && national.qtyPercent >= 100) ? '#86efac' : (national.amountPercent >= 80 || national.qtyPercent >= 80) ? '#fde047' : '#fca5a5',
+                                color: '#1e293b'
                               }}>
-                                {(territory.avgAmountPercent >= 100 && territory.avgQtyPercent >= 100) ? '✓ On Target' : (territory.avgAmountPercent >= 80 || territory.avgQtyPercent >= 80) ? '⚠ Close' : '✗ Below Target'}
+                                {(national.amountPercent >= 100 && national.qtyPercent >= 100) ? '✓ On Target' : (national.amountPercent >= 80 || national.qtyPercent >= 80) ? '⚠ Close' : '✗ Below'}
                               </span>
                             </td>
                           </tr>
                           
-                          {/* Dealers under Territory (when expanded) */}
-                          {isTerritoryExpanded && territory.dealers.map((item, dealerIndex) => {
+                          {/* Territories under National (when expanded) */}
+                          {isNationalExpanded && national.territories.map((territory, territoryIndex) => {
+                            const isTerritoryExpanded = expandedTerritories.has(`${national.nationalName}-${territory.territoryName}`);
+                            
+                            return (
+                              <React.Fragment key={`territory-${nationalIndex}-${territoryIndex}`}>
+                                {/* Territory Row (Level 2) */}
+                                <tr
+                                  style={{ 
+                                    cursor: 'pointer',
+                                    backgroundColor: '#e0e7ff',
+                                    fontWeight: '600'
+                                  }}
+                                  onClick={() => toggleTerritory(`${national.nationalName}-${territory.territoryName}`)}
+                                  className="territory-row"
+                                >
+                                  <td style={{ paddingLeft: '20px' }}>{isTerritoryExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</td>
+                                  <td colSpan="2">
+                                    <span style={{ marginLeft: '10px' }}><strong>{territory.territoryName}</strong></span>
+                                    <span style={{ marginLeft: '12px', fontSize: '10px', fontWeight: 'normal', color: '#6b7280' }}>
+                                      ({territory.dealerCount} {territory.dealerCount === 1 ? 'dealer' : 'dealers'})
+                                    </span>
+                                  </td>
+                                  <td>{formatCurrency(territory.totalTargetAmount)}</td>
+                                  <td>{formatCurrency(territory.totalAchievementAmount)}</td>
+                                  <td>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span className={territory.amountPercent >= 100 ? 'positive' : territory.amountPercent >= 80 ? 'warning' : 'negative'}>
+                                        {formatPercentage(territory.amountPercent)}
+                                      </span>
+                                      <div style={{ width: '60px', height: '8px', background: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                                        <div style={{
+                                          width: `${Math.min(territory.amountPercent, 100)}%`,
+                                          height: '100%',
+                                          background: territory.amountPercent >= 100 ? '#10b981' : territory.amountPercent >= 80 ? '#f59e0b' : '#ef4444',
+                                          transition: 'width 0.3s'
+                                        }} />
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td>{formatCurrency(territory.totalTargetQty)}</td>
+                                  <td>{formatCurrency(territory.totalAchievementQty)}</td>
+                                  <td style={{ color: '#999', fontStyle: 'italic' }}>-</td>
+                                  <td>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span className={territory.qtyPercent >= 100 ? 'positive' : territory.qtyPercent >= 80 ? 'warning' : 'negative'}>
+                                        {formatPercentage(territory.qtyPercent)}
+                                      </span>
+                                      <div style={{ width: '60px', height: '8px', background: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                                        <div style={{
+                                          width: `${Math.min(territory.qtyPercent, 100)}%`,
+                                          height: '100%',
+                                          background: territory.qtyPercent >= 100 ? '#10b981' : territory.qtyPercent >= 80 ? '#f59e0b' : '#ef4444',
+                                          transition: 'width 0.3s'
+                                        }} />
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <span style={{
+                                      padding: '4px 8px',
+                                      borderRadius: '4px',
+                                      fontSize: '10px',
+                                      fontWeight: '500',
+                                      background: (territory.amountPercent >= 100 && territory.qtyPercent >= 100) ? '#d1fae5' : (territory.amountPercent >= 80 || territory.qtyPercent >= 80) ? '#fef3c7' : '#fee2e2',
+                                      color: (territory.amountPercent >= 100 && territory.qtyPercent >= 100) ? '#065f46' : (territory.amountPercent >= 80 || territory.qtyPercent >= 80) ? '#92400e' : '#991b1b'
+                                    }}>
+                                      {(territory.amountPercent >= 100 && territory.qtyPercent >= 100) ? '✓ On Target' : (territory.amountPercent >= 80 || territory.qtyPercent >= 80) ? '⚠ Close' : '✗ Below Target'}
+                                    </span>
+                                  </td>
+                                </tr>
+                                
+                                {/* Dealers under Territory (Level 3 - when territory expanded) */}
+                                {isTerritoryExpanded && territory.dealers.map((item, dealerIndex) => {
                             const dealerKey = `${item.dealer_code}-${item.year}-${item.month}`;
                             const isExpanded = expandedDealer === dealerKey;
                             const targetAmount = breakdownType === 'abp' ? (item.abp_target_amount || 0) : (item.forecast_target_amount || 0);
@@ -1857,7 +2044,7 @@ const TargetVsAchievement = () => {
                                     <span style={{
                                       padding: '4px 8px',
                                       borderRadius: '4px',
-                                      fontSize: '12px',
+                                      fontSize: '10px',
                                       fontWeight: '500',
                                       background: (amountPercentage >= 100 && quantityPercentage >= 100) ? '#d1fae5' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '#fef3c7' : '#fee2e2',
                                       color: (amountPercentage >= 100 && quantityPercentage >= 100) ? '#065f46' : (amountPercentage >= 80 || quantityPercentage >= 80) ? '#92400e' : '#991b1b'
@@ -1874,32 +2061,32 @@ const TargetVsAchievement = () => {
                                   {/* Summary Cards */}
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
                                     <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Target Quantity</div>
-                                      <div style={{ fontSize: '18px', fontWeight: '600' }}>
+                                      <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px' }}>Target Quantity</div>
+                                      <div style={{ fontSize: '10px', fontWeight: '600' }}>
                                         {formatCurrency(breakdownType === 'abp' ? (item.abp_target_quantity || 0) : (item.forecast_target_quantity || 0))}
                                       </div>
                                     </div>
                                     <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Achievement Quantity</div>
-                                      <div style={{ fontSize: '18px', fontWeight: '600' }}>
+                                      <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px' }}>Achievement Quantity</div>
+                                      <div style={{ fontSize: '10px', fontWeight: '600' }}>
                                         {formatCurrency(item.achievement_quantity || 0)}
                                       </div>
                                     </div>
                                     <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Quantity Gap</div>
-                                      <div style={{ fontSize: '18px', fontWeight: '600', color: quantityGap >= 0 ? '#ef4444' : '#10b981' }}>
+                                      <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px' }}>Quantity Gap</div>
+                                      <div style={{ fontSize: '10px', fontWeight: '600', color: quantityGap >= 0 ? '#ef4444' : '#10b981' }}>
                                         {quantityGap >= 0 ? '-' : '+'}{formatCurrency(Math.abs(quantityGap))}
                                       </div>
                                     </div>
                                     <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Quantity %</div>
-                                      <div style={{ fontSize: '18px', fontWeight: '600', color: (item.quantity_percentage || 0) >= 100 ? '#10b981' : '#ef4444' }}>
+                                      <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px' }}>Quantity %</div>
+                                      <div style={{ fontSize: '10px', fontWeight: '600', color: (item.quantity_percentage || 0) >= 100 ? '#10b981' : '#ef4444' }}>
                                         {formatPercentage(item.quantity_percentage || 0)}
                                       </div>
                                     </div>
                                     <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Amount %</div>
-                                      <div style={{ fontSize: '18px', fontWeight: '600', color: (item.amount_percentage || 0) >= 100 ? '#10b981' : '#ef4444' }}>
+                                      <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px' }}>Amount %</div>
+                                      <div style={{ fontSize: '10px', fontWeight: '600', color: (item.amount_percentage || 0) >= 100 ? '#10b981' : '#ef4444' }}>
                                         {formatPercentage(item.amount_percentage || 0)}
                                       </div>
                                     </div>
@@ -1908,20 +2095,20 @@ const TargetVsAchievement = () => {
                                   {/* Application Breakdown */}
                                   {details && !details.error && (
                                     <div>
-                                      <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: '600' }}>Application-wise Breakdown</h4>
+                                      <h4 style={{ marginBottom: '12px', fontSize: '10px', fontWeight: '600' }}>Application-wise Breakdown</h4>
                                       {details.achievement && details.achievement.length > 0 ? (
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '8px' }}>
                                           {details.achievement.map((app, idx) => (
-                                            <div key={idx} style={{ padding: '10px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '13px' }}>
+                                            <div key={idx} style={{ padding: '10px', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '11px' }}>
                                               <div style={{ fontWeight: '600', marginBottom: '4px' }}>{app.application_name || 'Unknown'}</div>
-                                              <div style={{ color: '#666', fontSize: '12px' }}>
+                                              <div style={{ color: '#666', fontSize: '10px' }}>
                                                 Qty: {formatCurrency(app.qty || 0)} | Amount: {formatCurrency(app.amount || 0)}
                                               </div>
                                             </div>
                                           ))}
                                         </div>
                                       ) : (
-                                        <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '6px', color: '#92400e', fontSize: '13px' }}>
+                                        <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '6px', color: '#92400e', fontSize: '11px' }}>
                                           No application-level data available for this dealer.
                                         </div>
                                       )}
@@ -1929,13 +2116,13 @@ const TargetVsAchievement = () => {
                                   )}
 
                                   {details && details.error && (
-                                    <div style={{ padding: '12px', background: '#fee2e2', borderRadius: '6px', color: '#991b1b', fontSize: '13px' }}>
+                                    <div style={{ padding: '12px', background: '#fee2e2', borderRadius: '6px', color: '#991b1b', fontSize: '11px' }}>
                                       {details.error}
                                     </div>
                                   )}
 
                                       {!details && (
-                                        <div style={{ padding: '12px', background: '#f3f4f6', borderRadius: '6px', color: '#666', fontSize: '13px', textAlign: 'center' }}>
+                                        <div style={{ padding: '12px', background: '#f3f4f6', borderRadius: '6px', color: '#666', fontSize: '11px', textAlign: 'center' }}>
                                           Loading application details...
                                         </div>
                                       )}
@@ -1946,6 +2133,9 @@ const TargetVsAchievement = () => {
                             </React.Fragment>
                           );
                         })}
+                              </React.Fragment>
+                            );
+                          })}
                         </React.Fragment>
                       );
                     })}

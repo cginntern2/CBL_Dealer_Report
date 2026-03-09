@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const xlsx = require('xlsx');
 const db = require('../db');
+const { authenticateToken, authorize } = require('../middleware/auth');
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -138,8 +139,8 @@ router.get('/:id', (req, res) => {
   });
 });
 
-// Add dealer manually
-router.post('/', (req, res) => {
+// Add dealer manually (Admin and Sales Manager only)
+router.post('/', authenticateToken, authorize('admin', 'sales_manager'), (req, res) => {
   const { dealer_name, dealer_code, contact_person, email, phone, address, territory_id, credit_days, status } = req.body;
   
   // Validate required fields
@@ -177,8 +178,8 @@ router.post('/', (req, res) => {
   });
 });
 
-// Upload Excel file and import dealers
-router.post('/upload', upload.single('file'), (req, res) => {
+// Upload Excel file and import dealers (Admin and Sales Manager only)
+router.post('/upload', authenticateToken, authorize('admin', 'sales_manager'), upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -523,8 +524,8 @@ router.post('/upload', upload.single('file'), (req, res) => {
   }
 });
 
-// Update dealer
-router.put('/:id', (req, res) => {
+// Update dealer (Admin and Sales Manager only)
+router.put('/:id', authenticateToken, authorize('admin', 'sales_manager'), (req, res) => {
   const { id } = req.params;
   const { dealer_name, dealer_code, contact_person, email, phone, address, territory, credit_days, status } = req.body;
   
@@ -560,8 +561,8 @@ router.put('/:id', (req, res) => {
   });
 });
 
-// Delete dealer
-router.delete('/:id', (req, res) => {
+// Delete dealer (Admin and Sales Manager only)
+router.delete('/:id', authenticateToken, authorize('admin', 'sales_manager'), (req, res) => {
   const { id } = req.params;
   const query = 'DELETE FROM dealers WHERE id = ?';
   
@@ -577,8 +578,8 @@ router.delete('/:id', (req, res) => {
   });
 });
 
-// Delete all dealers (this will also delete all delinquent records due to CASCADE)
-router.delete('/clear/all', (req, res) => {
+// Delete all dealers (this will also delete all delinquent records due to CASCADE) (Admin and Sales Manager only)
+router.delete('/clear/all', authenticateToken, authorize('admin', 'sales_manager'), (req, res) => {
   const query = 'DELETE FROM dealers';
   
   db.query(query, (err, results) => {

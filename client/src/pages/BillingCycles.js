@@ -5,28 +5,32 @@ import './BillingCycles.css';
 
 const BillingCycles = () => {
   const [billingCycles, setBillingCycles] = useState([]);
+  const [exceptionsCount, setExceptionsCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [selectedDealer, setSelectedDealer] = useState(null);
   const [cycleStartDay, setCycleStartDay] = useState('26');
-  const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showExceptionsOnly, setShowExceptionsOnly] = useState(true);
 
-  // Fetch all billing cycles
+  // Fetch billing cycles
   const fetchBillingCycles = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await axios.get('/api/billing-cycles');
+      const response = await axios.get('/api/billing-cycles', {
+        params: { showExceptionsOnly: showExceptionsOnly.toString() }
+      });
       setBillingCycles(response.data.billingCycles || []);
+      setExceptionsCount(response.data.exceptionsCount || 0);
     } catch (error) {
       console.error('Error fetching billing cycles:', error);
       alert('Failed to fetch billing cycles');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showExceptionsOnly]);
 
   useEffect(() => {
     fetchBillingCycles();
@@ -86,15 +90,13 @@ const BillingCycles = () => {
     try {
       await axios.post('/api/billing-cycles', {
         dealer_code: selectedDealer.dealer_code,
-        cycle_start_day: parseInt(cycleStartDay),
-        notes: notes || null
+        cycle_start_day: parseInt(cycleStartDay)
       });
       
       // Reset form
       setSelectedDealer(null);
       setSearchTerm('');
       setCycleStartDay('26');
-      setNotes('');
       
       // Refresh list
       fetchBillingCycles();
@@ -216,16 +218,6 @@ const BillingCycles = () => {
               </select>
             </div>
 
-            <div className="form-group">
-              <label>Notes (Optional)</label>
-              <input
-                type="text"
-                placeholder="e.g., 26th-25th billing cycle"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-
             <button 
               type="submit" 
               className="btn btn-primary"
@@ -248,13 +240,30 @@ const BillingCycles = () => {
 
       {/* Billing Cycles Table */}
       <div className="cycles-table-card">
-        <h3><List size={18} /> Current Billing Cycle Exceptions ({billingCycles.length})</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ margin: 0 }}>
+            <List size={18} style={{ verticalAlign: 'middle', marginRight: 8 }} />
+            {showExceptionsOnly ? `Custom Cycle Dealers (${exceptionsCount})` : `All Dealers (${billingCycles.length})`}
+          </h3>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={showExceptionsOnly}
+              onChange={(e) => setShowExceptionsOnly(e.target.checked)}
+              style={{ width: 18, height: 18 }}
+            />
+            Show only custom cycles
+          </label>
+        </div>
         
         {loading ? (
           <div className="no-data">Loading...</div>
         ) : billingCycles.length === 0 ? (
           <div className="no-data">
-            No billing cycle exceptions found. All dealers are using standard monthly cycle (1st-30th/31st).
+            {showExceptionsOnly 
+              ? 'No custom billing cycles found. All dealers are using standard monthly cycle (1st-30th/31st).'
+              : 'No dealers found.'
+            }
           </div>
         ) : (
           <table className="cycles-table">
@@ -264,7 +273,6 @@ const BillingCycles = () => {
                 <th>Dealer Name</th>
                 <th>Territory</th>
                 <th>Billing Cycle</th>
-                <th>Notes</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -275,19 +283,20 @@ const BillingCycles = () => {
                   <td>{cycle.dealer_name}</td>
                   <td>{cycle.territory_name || '-'}</td>
                   <td>
-                    <span className="cycle-badge">
+                    <span className={`cycle-badge ${cycle.cycle_start_day === 1 ? 'standard' : 'custom'}`}>
                       {formatCycle(cycle.cycle_start_day)}
                     </span>
                   </td>
-                  <td>{cycle.notes || '-'}</td>
                   <td>
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={() => handleDelete(cycle.dealer_code, cycle.dealer_name)}
-                      title="Remove custom cycle (revert to standard)"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {cycle.cycle_start_day !== 1 && (
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => handleDelete(cycle.dealer_code, cycle.dealer_name)}
+                        title="Reset to standard cycle (1st-30th/31st)"
+                      >
+                        <Trash2 size={14} /> Reset
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
