@@ -21,3 +21,5 @@ db.query(updateQuery, (err, result) => {
   process.exit(0);
 });
 
+
+

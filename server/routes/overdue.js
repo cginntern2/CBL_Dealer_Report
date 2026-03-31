@@ -54,9 +54,8 @@ router.get('/report', authenticateToken, canAccessDealerData, (req, res) => {
   // Only show dealers with limits set
   whereClause += ' AND (d.lower_limit > 0 OR d.upper_limit > 0)';
   
-  // Main query to get overdue report from overdue_report table (calculated values)
-  // This table is populated by the calculate-balance endpoint
-  // If no overdue_report records exist, calculate on-the-fly from closing_balance
+  // Main query: one row per dealer. overdue_report can have many rows per dealer (history);
+  // we only join the latest row by calculation date (most recent balance run / upload).
   const query = `
     SELECT 
       d.dealer_code,
@@ -106,8 +105,27 @@ router.get('/report', authenticateToken, canAccessDealerData, (req, res) => {
       COALESCE(ach.achievement_amount, 0) as achievement_amount
     FROM dealers d
     LEFT JOIN territories t ON d.territory_id = t.id
-    LEFT JOIN overdue_report ovr ON BINARY d.dealer_code = BINARY ovr.dealer_code
-    -- Optional joins for target/achievement (only used if year/month filters are set)
+    LEFT JOIN (
+      SELECT 
+        ovr1.dealer_code,
+        ovr1.year,
+        ovr1.month,
+        ovr1.lower_limit,
+        ovr1.upper_limit,
+        ovr1.lower_limit_overdue,
+        ovr1.upper_limit_overdue,
+        ovr1.\`current_date\`,
+        ovr1.days_into_month
+      FROM overdue_report ovr1
+      INNER JOIN (
+        SELECT dealer_code, MAX(\`current_date\`) AS max_date
+        FROM overdue_report
+        GROUP BY dealer_code
+      ) ovr_latest
+        ON BINARY ovr1.dealer_code = BINARY ovr_latest.dealer_code
+        AND ovr1.\`current_date\` = ovr_latest.max_date
+    ) ovr ON BINARY d.dealer_code = BINARY ovr.dealer_code
+    -- Optional joins for target/achievement (year/month from UI filter — not the overdue snapshot month)
     LEFT JOIN abp_targets abp ON BINARY d.dealer_code = BINARY abp.dealer_code
       AND abp.year = ? AND abp.month = ?
     LEFT JOIN forecast_targets fc ON BINARY d.dealer_code = BINARY fc.dealer_code
@@ -162,7 +180,31 @@ router.get('/report', authenticateToken, canAccessDealerData, (req, res) => {
       }
     
       // Handle empty results gracefully
-      const data = results || [];
+      const data = (results || []).map((r) => {
+        const lower = parseFloat(r.lower_limit_overdue || 0) || 0;
+        const upper = parseFloat(r.upper_limit_overdue || 0) || 0;
+        const close = !!r.close_to_lower_limit_last_week;
+
+        let status = 'OK';
+        let status_level = 'ok';
+        let status_rank = 0;
+
+        if (upper > 0) {
+          status = 'Upper Overdue';
+          status_level = 'danger';
+          status_rank = 3;
+        } else if (lower > 0) {
+          status = 'Lower Overdue';
+          status_level = 'warn';
+          status_rank = 2;
+        } else if (close) {
+          status = 'Near Lower Limit';
+          status_level = 'info';
+          status_rank = 1;
+        }
+
+        return { ...r, status, status_level, status_rank };
+      });
       
       res.json({
         success: true,
@@ -172,8 +214,15 @@ router.get('/report', authenticateToken, canAccessDealerData, (req, res) => {
           total_dealers: data.length,
           lower_limit_overdue_count: data.filter(r => parseFloat(r.lower_limit_overdue || 0) > 0).length,
           upper_limit_overdue_count: data.filter(r => parseFloat(r.upper_limit_overdue || 0) > 0).length,
+          close_to_lower_limit_last_week_count: data.filter(r => !!r.close_to_lower_limit_last_week).length,
           total_lower_limit_overdue: data.reduce((sum, r) => sum + parseFloat(r.lower_limit_overdue || 0), 0),
-          total_upper_limit_overdue: data.reduce((sum, r) => sum + parseFloat(r.upper_limit_overdue || 0), 0)
+          total_upper_limit_overdue: data.reduce((sum, r) => sum + parseFloat(r.upper_limit_overdue || 0), 0),
+          status_counts: {
+            upper_overdue: data.filter(r => r.status === 'Upper Overdue').length,
+            lower_overdue: data.filter(r => r.status === 'Lower Overdue').length,
+            near_lower_limit: data.filter(r => r.status === 'Near Lower Limit').length,
+            ok: data.filter(r => r.status === 'OK').length
+          }
         }
       });
     });

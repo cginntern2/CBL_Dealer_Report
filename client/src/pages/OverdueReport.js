@@ -917,6 +917,7 @@ const OverdueReport = () => {
                 <th>Dealer Code</th>
                 <th>Dealer Name</th>
                 <th>Territory</th>
+                <th>Status</th>
                 {(selectedYear || selectedMonth) && <th>Year</th>}
                 {(selectedYear || selectedMonth) && <th>Month</th>}
                 <th>Lower Limit</th>
@@ -939,6 +940,11 @@ const OverdueReport = () => {
                     <td>{item.dealer_code}</td>
                     <td>{item.dealer_name}</td>
                     <td>{item.territory_name || 'N/A'}</td>
+                    <td>
+                      <span className={`status-badge ${item.status_level ? `status-${item.status_level}` : ''}`}>
+                        {item.status || '—'}
+                      </span>
+                    </td>
                     {(selectedYear || selectedMonth) && <td>{item.year || selectedYear || '-'}</td>}
                     {(selectedYear || selectedMonth) && <td>{item.month ? monthNames[item.month] || item.month : selectedMonth ? monthNames[parseInt(selectedMonth)] || selectedMonth : '-'}</td>}
                     <td>{formatCurrency(item.lower_limit)}</td>
