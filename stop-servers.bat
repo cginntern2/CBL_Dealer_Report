@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Stopping CBL Dealer Report Servers
+echo Stopping CBL Sales Report Servers
 echo ========================================
 echo.
 

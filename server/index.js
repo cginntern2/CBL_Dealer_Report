@@ -18,14 +18,14 @@ app.get('/api/health', (req, res) => {
     if (err) {
       res.json({ 
         status: 'success', 
-        message: 'CBL Dealer Report API is running',
+        message: 'CBL Sales Report API is running',
         database: 'disconnected',
         error: err.message
       });
     } else {
       res.json({ 
         status: 'success', 
-        message: 'CBL Dealer Report API is running',
+        message: 'CBL Sales Report API is running',
         database: 'connected'
       });
     }
@@ -43,7 +43,7 @@ app.use('/api/users', userRoutes);
 // Home/Welcome route
 app.get('/api/welcome', (req, res) => {
   res.json({ 
-    message: 'Welcome to CBL Dealer Report System',
+    message: 'Welcome to CBL Sales Report',
     modules: [
       'Target vs Achievement Report',
       'Overdue Report',

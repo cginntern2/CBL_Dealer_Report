@@ -1,7 +1,7 @@
 {
-  "name": "cbl-dealer-report",
+  "name": "cbl-sales-report",
   "version": "1.0.0",
-  "description": "CBL Dealer Report - Full Stack Application",
+  "description": "CBL Sales Report - Full Stack Application",
   "main": "server/index.js",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
@@ -13,7 +13,7 @@
   },
   "keywords": [
     "cbl",
-    "dealer",
+    "sales",
     "report"
   ],
   "author": "",

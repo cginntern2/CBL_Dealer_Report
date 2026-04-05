@@ -15,7 +15,7 @@ import './Home.css';
 const Home = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [welcomeMessage, setWelcomeMessage] = useState('Welcome to CBL Dealer Report System');
+  const [welcomeMessage, setWelcomeMessage] = useState('Welcome to CBL Sales Report');
   
   // Get user's display name (full name or username)
   const getUserDisplayName = () => {
@@ -35,7 +35,7 @@ const Home = () => {
       })
       .catch(error => {
         console.error('Error fetching welcome message:', error);
-        setWelcomeMessage('Welcome to CBL Dealer Report System');
+        setWelcomeMessage('Welcome to CBL Sales Report');
       });
   };
 
@@ -58,7 +58,7 @@ const Home = () => {
                 Welcome, {getUserDisplayName()}!
               </h2>
               <p className="welcome-subtitle">
-                Manage and track your dealer reports, achievements, and analytics from one central location.
+                Manage and track sales reporting, dealer performance, achievements, and analytics from one central location.
               </p>
             </div>
             <button className="refresh-btn" onClick={fetchWelcome}>

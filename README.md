@@ -1,6 +1,6 @@
-# CBL Dealer Report
+# CBL Sales Report
 
-A full-stack web application for managing dealer reports, built with React, Node.js, and MySQL.
+A full-stack web application for CBL sales reporting and dealer performance, built with React, Node.js, and MySQL.
 
 ## Features
 
@@ -20,7 +20,7 @@ A full-stack web application for managing dealer reports, built with React, Node
 ## Project Structure
 
 ```
-cbl-dealer-report/
+cbl-sales-report/
 ├── client/                 # React frontend
 │   ├── public/
 │   ├── src/

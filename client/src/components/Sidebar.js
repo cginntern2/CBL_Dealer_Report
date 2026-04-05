@@ -93,7 +93,7 @@ const Sidebar = () => {
       <div className="topbar-container">
         <Link to="/" className="topbar-brand">
           <div className="brand-icon">CBL</div>
-          <span className="brand-text">Dealer Report</span>
+          <span className="brand-text">Sales Report</span>
         </Link>
         
         <nav className={`topbar-nav ${isMobileMenuOpen ? 'mobile-open' : ''}`}>

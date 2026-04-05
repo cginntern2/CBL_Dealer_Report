@@ -1,4 +1,4 @@
--- CBL Dealer Report Database Schema
+-- CBL Sales Report Database Schema
 -- Create this database in MySQL Workbench
 
 CREATE DATABASE IF NOT EXISTS cbl_dealer_report;

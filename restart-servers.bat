@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Restarting CBL Dealer Report Servers
+echo Restarting CBL Sales Report Servers
 echo ========================================
 echo.
 
